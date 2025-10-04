@@ -1,10 +1,4 @@
 <script lang="ts" module>
-	import ChartPieIcon from '@lucide/svelte/icons/chart-pie';
-	import FrameIcon from '@lucide/svelte/icons/frame';
-	import LifeBuoyIcon from '@lucide/svelte/icons/life-buoy';
-	import MapIcon from '@lucide/svelte/icons/map';
-	import SendIcon from '@lucide/svelte/icons/send';
-
 	const data = {
 		user: {
 			name: 'shadcn',
@@ -13,27 +7,28 @@
 		},
 		navMain: [
 			{
-				title: 'Events',
-				url: '#',
+				title: 'Home',
+				url: '/home',
+				icon: House,
+				isActive: true
+			},
+			{
+				title: 'Events & Invites',
+				url: '/events',
 				icon: CalendarStar,
 				isActive: true
 			},
 			{
-				title: 'Invite',
-				url: '#',
-				icon: Ticket
-			},
-			{
 				title: 'Votes',
-				url: '#',
+				url: '/votes',
 				icon: BoxArrowDown
 			},
 			{
 				title: 'Settings',
-				url: '#',
+				url: 'settings',
 				icon: GearSix
 			}
-		],
+		]
 	};
 </script>
 
@@ -44,7 +39,7 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import CommandIcon from '@lucide/svelte/icons/command';
 	import type { ComponentProps } from 'svelte';
-	import { BoxArrowDown, CalendarStar, GearSix, Ticket } from 'phosphor-svelte';
+	import { BoxArrowDown, CalendarStar, GearSix, House, Ticket } from 'phosphor-svelte';
 
 	let { ref = $bindable(null), ...restProps }: ComponentProps<typeof Sidebar.Root> = $props();
 </script>

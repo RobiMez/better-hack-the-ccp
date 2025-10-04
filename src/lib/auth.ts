@@ -16,13 +16,6 @@ const adapter = mongodbAdapter(dbInstance as any);
 const options = {
 	database: adapter,
 
-	session: {
-		cookieCache: {
-			enabled: true,
-			maxAge: 3 * 60 * 60 // Cache for 3 hours
-		}
-	},
-
 	secret: process.env.BETTER_AUTH_SECRET,
 
 	plugins: [],

@@ -5,6 +5,8 @@ import { building } from '$app/environment';
 import chalk from 'chalk';
 
 import { auth } from '$src/lib/auth';
+// Import models to ensure they are registered before any requests
+import '$src/lib/models.js';
 
 export const handleFetch: HandleFetch = async ({ request, fetch }) => {
 	console.log(chalk.bgWhite('[handleFetch] ') + ' Request to API URL ', request.url);
@@ -13,6 +15,11 @@ export const handleFetch: HandleFetch = async ({ request, fetch }) => {
 
 export const handle: Handle = async ({ event, resolve }) => {
 	if (event.url.pathname.includes('/auth')) {
+		return svelteKitHandler({ event, resolve, auth, building });
+	}
+
+	// Whitelist RSVP routes - allow access without authentication
+	if (event.url.pathname.startsWith('/rsvp/')) {
 		return svelteKitHandler({ event, resolve, auth, building });
 	}
 

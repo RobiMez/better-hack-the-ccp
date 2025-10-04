@@ -4,6 +4,9 @@
 
 	import { authClient } from '$lib/auth-client'; // your Better Auth instance
 	import { onMount } from 'svelte';
+	import CalendarUi from './calendar-ui.svelte';
+
+	let { data } = $props();
 
 	let loading = $state(false);
 	let message = $state('');
@@ -28,7 +31,6 @@
 			loading = false;
 		}
 	};
-
 
 	onMount(async () => {
 		try {
@@ -73,4 +75,8 @@
 	<div class="border border-black whitespace-pre-line">
 		{JSON.stringify(accounts, null, 2)}
 	</div>
+	<div class="border border-black whitespace-pre-line">
+		{JSON.stringify(data, null, 2)}
+	</div>
+	<!-- <CalendarUi busyTimes={data.busyTimes} /> -->
 </div>
