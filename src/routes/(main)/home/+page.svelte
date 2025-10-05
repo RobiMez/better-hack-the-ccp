@@ -3,10 +3,84 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import * as Sidebar from '$lib/components/ui/sidebar';
 	import { Plus } from 'phosphor-svelte';
+	import CreateEditDialog from '../events/components/createEditDialog.svelte';
+	import { EventType } from '$lib/models/event.model.types.js';
 
 	import { Calendar, TimeGrid, Interaction } from '@event-calendar/core';
 
 	let { data }: { data: any } = $props();
+
+	// Dialog state
+	let showDialog = $state(false);
+	let loading = $state(false);
+
+	// Form state for quick create
+	let formData = $state({
+		eventType: EventType.SMALL,
+		organizerId: undefined as string | undefined,
+		name: '',
+		description: '',
+		bounds: {
+			start: '',
+			end: ''
+		},
+		inviteList: [],
+		ticketSlots: []
+	});
+
+	function resetForm() {
+		formData = {
+			eventType: EventType.SMALL,
+			organizerId: undefined,
+			name: '',
+			description: '',
+			bounds: {
+				start: '',
+				end: ''
+			},
+			inviteList: [],
+			ticketSlots: []
+		};
+	}
+
+	async function handleSave() {
+		loading = true;
+		try {
+			const eventPayload = {
+				...formData,
+				organizerId: data.user?._id || data.user?.id
+			};
+			
+			const response = await fetch('/api/events', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(eventPayload)
+			});
+
+			const result = await response.json();
+
+			if (response.ok) {
+				showDialog = false;
+				resetForm();
+				// Refresh the page to show the new event
+				window.location.reload();
+			} else {
+				alert('Error creating event: ' + result.error);
+			}
+		} catch (error) {
+			console.error('Error creating event:', error);
+			alert('Failed to create event');
+		} finally {
+			loading = false;
+		}
+	}
+
+	function handleCancel() {
+		resetForm();
+		showDialog = false;
+	}
 
 	let options = $state({
 		view: 'timeGridWeek',
@@ -27,6 +101,15 @@
 		dateClick: (info: any) => {
 			console.log('Date clicked:', info.date);
 		},
+		select: (info: any) => {
+			console.log('Time range selected:', info);
+			// Pre-fill form with selected time range
+			formData.bounds.start = new Date(info.start).toISOString().slice(0, 16);
+			formData.bounds.end = new Date(info.end).toISOString().slice(0, 16);
+			
+			// Open the create dialog
+			showDialog = true;
+		},
 		eventMouseEnter: (info: any) => {
 			console.log('Event hover:', info.event);
 		},
@@ -41,8 +124,8 @@
 		// Display event details
 		displayEventEnd: true,
 		eventTimeFormat: {
-			hour: 'numeric',
-			minute: '2-digit'
+			hour: 'numeric' as const,
+			minute: '2-digit' as const
 		}
 	});
 </script>
@@ -98,5 +181,19 @@
 		</div>
 	{/if}
 
+	<small class="text-primary/50 text-sm">
+		These are your free spots. Click and drag on a time range to quickly create a new event!
+	</small>
+	
 	<Calendar plugins={[TimeGrid, Interaction]} {options} />
 </section>
+
+<!-- Quick Create Event Dialog -->
+<CreateEditDialog 
+	bind:open={showDialog}
+	editingEvent={null}
+	bind:formData={formData}
+	{loading}
+	onSave={handleSave}
+	onCancel={handleCancel}
+/>

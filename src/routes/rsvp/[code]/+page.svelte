@@ -1,6 +1,17 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
-	import { Calendar, MapPin, User, Clock, Check, X, GoogleLogo, ChatCircle } from 'phosphor-svelte';
+	import {
+		Calendar,
+		MapPin,
+		User,
+		Clock,
+		Check,
+		X,
+		GoogleLogo,
+		ChatCircle,
+		CaretDown,
+		CaretUp
+	} from 'phosphor-svelte';
 	import { EventStatus } from '$lib/models/event.model.types.js';
 	import { authClient } from '$lib/auth-client.js';
 	import { onMount } from 'svelte';
@@ -34,6 +45,10 @@
 		MicIcon,
 		GlobeIcon
 	} from '$lib/components/ai-elements/prompt-input';
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
+	// Import calendar components
+	import { Calendar as EventCalendar, TimeGrid, Interaction } from '@event-calendar/core';
 
 	let { data }: { data: any } = $props();
 
@@ -42,11 +57,34 @@
 	let authLoading = $state(false);
 	let calendarLoading = $state(false);
 
+	// Event card collapse state
+	let isEventCardCollapsed = $state(false);
+
 	// Chat interface state
 	let showChat = $state(false);
 	let visibleMessages = $state<
 		Array<{ key: string; value: string; name: string; avatar?: string }>
 	>([]);
+
+	// Calendar and free time state
+	let freeTimeSlots = $state<Array<{ start: Date; end: Date; duration: number }>>([]);
+	let partialAvailabilitySlots = $state<
+		Array<{
+			start: Date;
+			end: Date;
+			duration: number;
+			conflicts?: Array<{
+				start: Date;
+				end: Date;
+				conflictingParticipants: string[];
+			}>;
+		}>
+	>([]);
+	let calendarAnalysisLoading = $state(false);
+	let conversationHistory = $state<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
+	let showCalendarVisualization = $state(false);
+	let calendarEvents = $state<Array<any>>([]);
+	let calendarOptions = $state<any>(null);
 
 	// Chat input state
 	let models = [
@@ -93,9 +131,39 @@
 		} else {
 			console.log('⚠️ Client: User not authenticated from server');
 		}
+
+		// If user has already RSVP'd AND is authenticated, collapse the event card and show chat
+		if (data.invite.status !== 'pending' && data.authStatus.isAuthenticated) {
+			isEventCardCollapsed = true;
+			showChat = true;
+
+			// Add initial welcome message based on existing status
+			visibleMessages = [
+				{
+					key: 'welcome',
+					value:
+						data.invite.status === 'accepted'
+							? `Welcome back! You've already accepted the invitation to "${data.event.name}". Let's continue planning together!`
+							: `Thanks for letting us know you can't make it to "${data.event.name}". Is there anything you'd like to discuss about the event?`,
+					name: 'Assistant',
+					avatar: undefined
+				}
+			];
+
+			// Analyze calendar for users who have already accepted
+			if (
+				data.invite.status === 'accepted' &&
+				data.authStatus.isAuthenticated &&
+				data.authStatus.hasCalendarAccess
+			) {
+				setTimeout(() => {
+					fetchUserCalendarAndAnalyzeFreeTime();
+				}, 1500); // Wait for UI to load
+			}
+		}
 	});
 
-	let handleSubmit = (message: PromptInputMessage) => {
+	let handleSubmit = async (message: PromptInputMessage) => {
 		let hasText = Boolean(message.text);
 		let hasAttachments = Boolean(message.files?.length);
 
@@ -116,6 +184,9 @@
 					avatar: undefined
 				}
 			];
+
+			// Add to conversation history
+			conversationHistory = [...conversationHistory, { role: 'user', content: message.text }];
 		}
 
 		console.log('Submitting message:', message);
@@ -124,27 +195,112 @@
 			status = 'streaming';
 		}, SUBMITTING_TIMEOUT);
 
+		// Generate intelligent responses based on message content
 		setTimeout(() => {
 			status = 'idle';
-			// Clear the input after successful submission
 			text = '';
 
-			// Add a mock response for demo purposes
+			let responseText = `Thanks for your message! I'll help you plan "${data.event.name}". What would you like to discuss about the event?`;
+
+			// Smart keyword-based responses
+			if (message.text) {
+				const text = message.text.toLowerCase();
+
+				if (text.includes('time') || text.includes('when') || text.includes('schedule')) {
+					if (freeTimeSlots.length > 0) {
+						responseText =
+							'I can see your free time slots above. Which of those times work best for you? I can help coordinate with other attendees once you let me know your preferences!';
+					} else {
+						responseText =
+							"Let me check your calendar for available times. Click the 'Check Free Times' button above, or tell me what times typically work best for you!";
+					}
+				} else if (
+					text.includes('prefer') ||
+					text.includes('like') ||
+					text.includes('good') ||
+					text.includes('work')
+				) {
+					responseText =
+						"Great! Let me know your preferred times and I'll help make this event happen. If you haven't seen your free time slots yet, I can analyze your calendar to suggest the best options.";
+				} else if (text.includes('first') || text.includes('1') || text.includes('option 1')) {
+					if (freeTimeSlots.length > 0) {
+						const firstSlot = freeTimeSlots[0];
+						const timeStr = firstSlot.start.toLocaleDateString('en-US', {
+							weekday: 'long',
+							month: 'short',
+							day: 'numeric',
+							hour: 'numeric',
+							minute: '2-digit',
+							hour12: true
+						});
+						responseText = `Perfect! You've chosen the first time slot: ${timeStr}. That looks like a great time for the event. I'll make note of your preference!`;
+					} else {
+						responseText =
+							"I'd love to help you with the first option, but I need to see your available times first. Try clicking 'Check Free Times' above!";
+					}
+				} else if (text.includes('second') || text.includes('2') || text.includes('option 2')) {
+					if (freeTimeSlots.length > 1) {
+						const secondSlot = freeTimeSlots[1];
+						const timeStr = secondSlot.start.toLocaleDateString('en-US', {
+							weekday: 'long',
+							month: 'short',
+							day: 'numeric',
+							hour: 'numeric',
+							minute: '2-digit',
+							hour12: true
+						});
+						responseText = `Excellent choice! You've selected the second time slot: ${timeStr}. That's a solid option for the event. I've noted your preference!`;
+					} else {
+						responseText =
+							"I'd like to help with the second option, but I need to check your calendar first. Click 'Check Free Times' to see all available slots!";
+					}
+				} else if (text.includes('third') || text.includes('3') || text.includes('option 3')) {
+					if (freeTimeSlots.length > 2) {
+						const thirdSlot = freeTimeSlots[2];
+						const timeStr = thirdSlot.start.toLocaleDateString('en-US', {
+							weekday: 'long',
+							month: 'short',
+							day: 'numeric',
+							hour: 'numeric',
+							minute: '2-digit',
+							hour12: true
+						});
+						responseText = `Great selection! You've picked the third time slot: ${timeStr}. That works well for the event. Your preference has been recorded!`;
+					} else {
+						responseText =
+							"I'd love to discuss the third option, but let me analyze your calendar first. Use the 'Check Free Times' button to see what's available!";
+					}
+				} else if (text.includes('hello') || text.includes('hi') || text.includes('hey')) {
+					responseText = `Hello! I'm here to help you plan "${data.event.name}". I can analyze your calendar to find the best times that work for you. Would you like me to check your free time slots?`;
+				} else if (text.includes('help')) {
+					responseText = `I'm here to help you plan this event! I can:\n\n• Analyze your calendar for free time slots\n• Help you choose the best times\n• Coordinate with other attendees\n• Answer questions about the event\n\nWhat would you like to do first?`;
+				}
+			}
+
 			visibleMessages = [
 				...visibleMessages,
 				{
 					key: `assistant-${Date.now()}`,
-					value: `Thanks for your message! I'll help you plan "${data.event.name}". What would you like to discuss about the event?`,
+					value: responseText,
 					name: 'Assistant',
 					avatar: undefined
 				}
 			];
+
+			// Update conversation history
+			conversationHistory = [...conversationHistory, { role: 'assistant', content: responseText }];
 		}, STREAMING_TIMEOUT);
 	};
-
+	function generateDynamicCallbackURL(): string {
+		// Example logic to generate a dynamic URL
+		const baseURL = window.location.origin;
+		const dynamicPath = `/rsvp/${page.params.code}`;
+		return `${baseURL}${dynamicPath}`;
+	}
 	async function handleGoogleSignIn() {
-		if (session?.data?.session) {
-			console.log('User is already signed in, skipping sign in');
+		// Only skip if the user is already signed in AND is the correct invited user
+		if (session?.data?.session && isInvitedUser) {
+			console.log('Correct user is already signed in, skipping sign in');
 			return;
 		}
 
@@ -152,7 +308,7 @@
 		try {
 			await authClient.signIn.social({
 				provider: 'google',
-				callbackURL: window.location.href // Redirect back to this invite page
+				callbackURL: generateDynamicCallbackURL()
 			});
 		} catch (error) {
 			console.error('Google sign in failed:', error);
@@ -171,8 +327,8 @@
 		try {
 			await authClient.linkSocial({
 				provider: 'google',
-				scopes: ['https://www.googleapis.com/auth/calendar.readonly'],
-				callbackURL: window.location.href // Redirect back to this invite page
+				callbackURL: generateDynamicCallbackURL(),
+				scopes: ['https://www.googleapis.com/auth/calendar.readonly']
 			});
 		} catch (error) {
 			console.error('Calendar access request failed:', error);
@@ -190,6 +346,383 @@
 			hour: '2-digit',
 			minute: '2-digit'
 		});
+	}
+
+	async function fetchUserCalendarAndAnalyzeFreeTime() {
+		if (!session?.data?.user || !hasCalendarAccess) {
+			console.log('No calendar access available');
+			return;
+		}
+
+		calendarAnalysisLoading = true;
+		try {
+			// Call our API route that handles multi-user calendar analysis
+			const response = await fetch(`/api/calendar/free-times?eventId=${data.event._id}`, {
+				method: 'GET',
+				headers: {
+					'Content-Type': 'application/json'
+				}
+			});
+
+			if (!response.ok) {
+				const errorData = await response.json();
+				console.error('API Error:', errorData);
+				throw new Error(errorData.error || 'Failed to fetch calendar data');
+			}
+
+			const apiResponse = await response.json();
+
+			if (!apiResponse.success) {
+				throw new Error(apiResponse.error || 'Failed to analyze calendar');
+			}
+
+			// Convert ISO strings back to Date objects for display
+			const slots = apiResponse.freeTimeSlots.map((slot: any) => ({
+				start: new Date(slot.start),
+				end: new Date(slot.end),
+				duration: slot.duration
+			}));
+
+			const partialSlots = (apiResponse.partialAvailability || []).map((slot: any) => ({
+				start: new Date(slot.start),
+				end: new Date(slot.end),
+				duration: slot.duration,
+				conflicts:
+					slot.conflicts?.map((conflict: any) => ({
+						start: new Date(conflict.start),
+						end: new Date(conflict.end),
+						conflictingParticipants: conflict.conflictingParticipants
+					})) || []
+			}));
+
+			freeTimeSlots = slots;
+			partialAvailabilitySlots = partialSlots;
+
+			// Generate AI message about free times
+			if (slots.length > 0) {
+				const freeTimeMessage = generateMultiUserFreeTimeMessage(slots, apiResponse);
+
+				visibleMessages = [
+					...visibleMessages,
+					{
+						key: `calendar-analysis-${Date.now()}`,
+						value: freeTimeMessage,
+						name: 'Assistant',
+						avatar: undefined
+					}
+				];
+			} else if (partialSlots.length > 0) {
+				// Show partial availability with conflict details
+				const partialMessage = generatePartialAvailabilityMessage(partialSlots, apiResponse);
+				visibleMessages = [
+					...visibleMessages,
+					{
+						key: `calendar-partial-${Date.now()}`,
+						value: partialMessage,
+						name: 'Assistant',
+						avatar: undefined
+					}
+				];
+			} else {
+				// 0 events means everyone is completely free during the entire window
+				const allFreeMessage = generateAllFreeTimeMessage(apiResponse);
+				visibleMessages = [
+					...visibleMessages,
+					{
+						key: `calendar-all-free-${Date.now()}`,
+						value: allFreeMessage,
+						name: 'Assistant',
+						avatar: undefined
+					}
+				];
+			}
+		} catch (error) {
+			console.error('Error analyzing calendar:', error);
+
+			visibleMessages = [
+				...visibleMessages,
+				{
+					key: `calendar-error-${Date.now()}`,
+					value:
+						"I'm having trouble accessing your calendar right now. Let's continue planning manually!",
+					name: 'Assistant',
+					avatar: undefined
+				}
+			];
+		} finally {
+			calendarAnalysisLoading = false;
+		}
+	}
+
+	function generateFreeTimeMessage(
+		slots: Array<{ start: Date; end: Date; duration: number }>
+	): string {
+		let message = "I've analyzed your calendar and found some great free time slots! 📅\n\n";
+
+		slots.forEach((slot, index) => {
+			const startFormatted = slot.start.toLocaleDateString('en-US', {
+				weekday: 'long',
+				month: 'short',
+				day: 'numeric',
+				hour: 'numeric',
+				minute: '2-digit',
+				hour12: true
+			});
+
+			const endFormatted = slot.end.toLocaleDateString('en-US', {
+				hour: 'numeric',
+				minute: '2-digit',
+				hour12: true
+			});
+
+			message += `${index + 1}. **${startFormatted}** to **${endFormatted}** (${slot.duration} minutes)\n`;
+		});
+
+		message +=
+			'\nWould you like to mark any of these as your preferred times for the event? Just let me know which ones work best for you! 🗓️';
+
+		return message;
+	}
+
+	function generateCalendarVisualization(responseData: any) {
+		const events: any[] = [];
+		const eventBounds = {
+			start: new Date(responseData.eventDetails?.bounds?.start),
+			end: new Date(responseData.eventDetails?.bounds?.end)
+		};
+
+		// Add event bounds as red background events (out of bounds areas)
+		const dayBefore = new Date(eventBounds.start);
+		dayBefore.setDate(dayBefore.getDate() - 1);
+		const dayAfter = new Date(eventBounds.end);
+		dayAfter.setDate(dayAfter.getDate() + 1);
+
+		// Out of bounds - before event window
+		events.push({
+			id: 'out-of-bounds-before',
+			start: dayBefore.toISOString(),
+			end: eventBounds.start.toISOString(),
+			title: 'Out of Event Window',
+			display: 'background',
+			backgroundColor: '#fca5a5', // red-300
+			classNames: ['out-of-bounds']
+		});
+
+		// Out of bounds - after event window
+		events.push({
+			id: 'out-of-bounds-after',
+			start: eventBounds.end.toISOString(),
+			end: dayAfter.toISOString(),
+			title: 'Out of Event Window',
+			display: 'background',
+			backgroundColor: '#fca5a5', // red-300
+			classNames: ['out-of-bounds']
+		});
+
+		// Add free time slots as green background events
+		freeTimeSlots.forEach((slot, index) => {
+			events.push({
+				id: `free-${index}`,
+				start: slot.start.toISOString(),
+				end: slot.end.toISOString(),
+				title: `Available (${slot.duration} min)`,
+				display: 'background',
+				backgroundColor: '#86efac', // green-300
+				classNames: ['available-time']
+			});
+		});
+
+		// Add partial availability slots as yellow background events
+		partialAvailabilitySlots.forEach((slot, index) => {
+			events.push({
+				id: `partial-${index}`,
+				start: slot.start.toISOString(),
+				end: slot.end.toISOString(),
+				title: `Partial Availability (${slot.duration} min)`,
+				display: 'background',
+				backgroundColor: '#fde047', // yellow-300
+				classNames: ['partial-availability']
+			});
+
+			// Add conflict details as regular events
+			slot.conflicts?.forEach((conflict, conflictIndex) => {
+				events.push({
+					id: `conflict-${index}-${conflictIndex}`,
+					start: conflict.start.toISOString(),
+					end: conflict.end.toISOString(),
+					title: `Busy: ${conflict.conflictingParticipants.join(', ')}`,
+					backgroundColor: '#f97316', // orange-500
+					textColor: '#ffffff',
+					classNames: ['conflict-event']
+				});
+			});
+		});
+
+		calendarEvents = events;
+
+		// Set up calendar options
+		calendarOptions = {
+			view: 'timeGridWeek',
+			height: '500px',
+			headerToolbar: {
+				start: 'prev,next today',
+				center: 'title',
+				end: 'timeGridWeek,timeGridDay'
+			},
+			date: eventBounds.start,
+			events: calendarEvents,
+			editable: false,
+			selectable: false,
+			dayMaxEvents: false,
+			allDaySlot: false,
+			slotMinTime: '00:00:00',
+			slotMaxTime: '24:00:00',
+			slotDuration: '00:30:00',
+			eventTimeFormat: {
+				hour: 'numeric' as const,
+				minute: '2-digit' as const
+			},
+			eventClick: (info: any) => {
+				// Handle clicks on availability slots
+				if (info.event.classNames.includes('available-time')) {
+					const message = `You clicked on an available time slot: ${info.event.title}. Would you like to select this time for the event?`;
+
+					visibleMessages = [
+						...visibleMessages,
+						{
+							key: `calendar-click-${Date.now()}`,
+							value: message,
+							name: 'Assistant',
+							avatar: undefined
+						}
+					];
+				}
+			}
+		};
+
+		showCalendarVisualization = true;
+	}
+
+	function generateMultiUserFreeTimeMessage(
+		slots: Array<{ start: Date; end: Date; duration: number }>,
+		responseData: any
+	): string {
+		const participantCount = responseData.participants?.length || 0;
+		const withCalendarAccess = responseData.participantsWithCalendarAccess?.length || 0;
+
+		let message = `Great news! I've analyzed everyone's calendars and found times when all ${participantCount} participants are free! 🎉\n\n`;
+
+		if (withCalendarAccess < participantCount) {
+			message += `📋 Note: ${withCalendarAccess} out of ${participantCount} participants have calendar access.\n\n`;
+		}
+
+		message += `I've generated a visual calendar below showing:\n`;
+		message += `🟢 **Green areas**: Times when everyone is available\n`;
+		message += `🔴 **Red areas**: Outside the event time window\n\n`;
+		message += `Click on any green time slot to select it for the event! 📅`;
+
+		// Generate calendar visualization
+		generateCalendarVisualization(responseData);
+
+		return message;
+	}
+
+	function generatePartialAvailabilityMessage(
+		partialSlots: Array<{
+			start: Date;
+			end: Date;
+			duration: number;
+			conflicts?: Array<{
+				start: Date;
+				end: Date;
+				conflictingParticipants: string[];
+			}>;
+		}>,
+		responseData: any
+	): string {
+		const participantCount = responseData.participants?.length || 0;
+		const withCalendarAccess = responseData.participantsWithCalendarAccess?.length || 0;
+
+		let message = `I found some potential time slots, but some participants have conflicts. Here's a visual breakdown: 📅⚠️\n\n`;
+
+		if (withCalendarAccess < participantCount) {
+			message += `📋 Note: ${withCalendarAccess} out of ${participantCount} participants have calendar access.\n\n`;
+		}
+
+		message += `I've generated a visual calendar below showing:\n`;
+		message += `🟢 **Green areas**: Times when everyone is available\n`;
+		message += `🟡 **Yellow areas**: Times with some conflicts\n`;
+		message += `🟠 **Orange events**: Specific conflicts (hover to see who's busy)\n`;
+		message += `🔴 **Red areas**: Outside the event time window\n\n`;
+		message += `Click on any available time slot to select it for the event! 🤔`;
+
+		// Generate calendar visualization
+		generateCalendarVisualization(responseData);
+
+		return message;
+	}
+
+	function generateAllFreeTimeMessage(responseData: any): string {
+		const participantCount = responseData.participants?.length || 0;
+		const withCalendarAccess = responseData.participantsWithCalendarAccess?.length || 0;
+
+		let message = `Excellent news! 🎉 I've analyzed everyone's calendars and found that all ${participantCount} participants are completely free during the entire event window!\n\n`;
+
+		if (withCalendarAccess < participantCount) {
+			message += `📋 Note: ${withCalendarAccess} out of ${participantCount} participants have calendar access.\n\n`;
+		}
+
+		// Format the event bounds nicely
+		const eventStart = new Date(responseData.eventDetails?.bounds?.start);
+		const eventEnd = new Date(responseData.eventDetails?.bounds?.end);
+
+		if (eventStart && eventEnd) {
+			const startFormatted = eventStart.toLocaleDateString('en-US', {
+				weekday: 'long',
+				month: 'short',
+				day: 'numeric',
+				hour: 'numeric',
+				minute: '2-digit',
+				hour12: true
+			});
+
+			const endFormatted = eventEnd.toLocaleDateString('en-US', {
+				weekday: 'long',
+				month: 'short',
+				day: 'numeric',
+				hour: 'numeric',
+				minute: '2-digit',
+				hour12: true
+			});
+
+			message += `**Available Time Window:**\n`;
+			message += `From **${startFormatted}** to **${endFormatted}**\n\n`;
+		}
+
+		message +=
+			'Since everyone is free during this entire period, you can choose any time within this window that works best for the group! 🗓️✨\n\n';
+		message += 'What time would you prefer for the event?';
+
+		return message;
+	}
+
+	function generateNoAvailableTimeMessage(responseData: any): string {
+		const participantCount = responseData.participants?.length || 0;
+		const withCalendarAccess = responseData.participantsWithCalendarAccess?.length || 0;
+
+		let message = `I've checked everyone's calendars, but unfortunately couldn't find any time slots where all ${participantCount} participants are completely free. 😔\n\n`;
+
+		if (withCalendarAccess < participantCount) {
+			message += `📋 Note: Only ${withCalendarAccess} out of ${participantCount} participants have calendar access, which might limit the analysis.\n\n`;
+		}
+
+		message += '**Here are some options:**\n';
+		message += "• Let me know if you'd like to check for partial availability\n";
+		message += '• Consider adjusting the event time bounds\n';
+		message += '• Manually coordinate with participants about their availability\n\n';
+		message += 'What would you like to do next? 🤔';
+
+		return message;
 	}
 
 	async function respondToInvite(response: 'accepted' | 'declined') {
@@ -210,7 +743,8 @@
 				data.invite.status = response;
 				responseSubmitted = true;
 
-				// Show chat interface after successful RSVP
+				// Collapse the event card and show chat interface
+				isEventCardCollapsed = true;
 				showChat = true;
 
 				// Add initial welcome message
@@ -225,6 +759,21 @@
 						avatar: undefined
 					}
 				];
+
+				// Scroll to chat interface after a brief delay
+				setTimeout(() => {
+					const chatSection = document.querySelector('#chat-interface');
+					if (chatSection) {
+						chatSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+					}
+				}, 300);
+
+				// Analyze calendar for free times after accepting
+				if (response === 'accepted' && hasCalendarAccess) {
+					setTimeout(() => {
+						fetchUserCalendarAndAnalyzeFreeTime();
+					}, 1000); // Wait a bit for UI to settle
+				}
 			} else {
 				const error = await res.json();
 				alert('Error: ' + error.message);
@@ -259,6 +808,29 @@
 		}
 	}
 
+	function toggleEventCard() {
+		isEventCardCollapsed = !isEventCardCollapsed;
+
+		// If expanding, scroll to top of event card
+		if (!isEventCardCollapsed) {
+			setTimeout(() => {
+				const eventCard = document.querySelector('#event-card');
+				if (eventCard) {
+					eventCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+				}
+			}, 100);
+		}
+		// If collapsing and chat is visible, scroll to chat
+		else if (showChat) {
+			setTimeout(() => {
+				const chatSection = document.querySelector('#chat-interface');
+				if (chatSection) {
+					chatSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+				}
+			}, 100);
+		}
+	}
+
 	// Check if user can respond (authenticated + is invited user + has calendar access)
 	let canRespond = $derived(session?.data?.session && isInvitedUser && hasCalendarAccess);
 </script>
@@ -267,292 +839,391 @@
 	<title>Event Invitation - {data.event.name}</title>
 </svelte:head>
 
-<div class="bg-background min-h-screen">
-	<div class="container mx-auto max-w-2xl px-4 py-8">
-		<div class="bg-card border-border overflow-hidden rounded-lg border shadow-lg">
+<div class="bg-background maxw-4xl container mx-auto flex min-h-screen flex-row gap-4 px-4 py-8">
+	<div class="w-4/12">
+		<div id="event-card" class="bg-card border-border overflow-hidden rounded-lg border shadow-lg">
 			<!-- Header -->
 			<div class="bg-primary/5 border-border border-b p-6">
-				<h1 class="text-card-foreground mb-2 text-2xl font-bold">You're Invited!</h1>
-				<p class="text-muted-foreground">
-					You have been invited to <strong>{data.event.name}</strong>
-				</p>
-			</div>
-
-			<!-- Event Details -->
-			<div class="space-y-4 p-6">
-				<div class="space-y-3">
-					<h2 class="text-card-foreground text-xl font-semibold">{data.event.name}</h2>
-
-					{#if data.event.description}
-						<p class="text-muted-foreground">{data.event.description}</p>
-					{/if}
-
-					<div class="space-y-2">
-						<div class="flex items-center gap-2 text-sm">
-							<Calendar size={16} class="text-primary" />
-							<span class="font-medium">When:</span>
-							<span>{formatDate(data.event.bounds.start)}</span>
-						</div>
-
-						<div class="flex items-center gap-2 text-sm">
-							<Clock size={16} class="text-primary" />
-							<span class="font-medium">Duration:</span>
-							<span>
-								{formatDate(data.event.bounds.start)} - {formatDate(data.event.bounds.end)}
-							</span>
-						</div>
-
-						<div class="flex items-center gap-2 text-sm">
-							<User size={16} class="text-primary" />
-							<span class="font-medium">Organizer:</span>
-							<span>{data.event.organizer_id?.name || 'Unknown'}</span>
-						</div>
+				<div class="flex items-center justify-between">
+					<div>
+						<h1 class="text-card-foreground mb-2 text-2xl font-bold">You're Invited!</h1>
+						<p class="text-muted-foreground">
+							You have been invited to <strong>{data.event.name}</strong>
+						</p>
 					</div>
+
+					<!-- Collapse/Expand button - only show if user has RSVP'd -->
+					{#if data.invite.status !== 'pending' || responseSubmitted}
+						<Button
+							variant="ghost"
+							size="sm"
+							onclick={toggleEventCard}
+							class="flex items-center gap-2"
+						>
+							{isEventCardCollapsed ? 'Show Details' : 'Hide Details'}
+							{#if isEventCardCollapsed}
+								<CaretDown size={16} />
+							{:else}
+								<CaretUp size={16} />
+							{/if}
+						</Button>
+					{/if}
 				</div>
 
-				<!-- Invite Details -->
-				<div class="bg-muted/50 rounded-lg p-4">
-					<h3 class="mb-2 font-medium">Invitation Details</h3>
-					<div class="space-y-1 text-sm">
-						<div class="flex justify-between">
-							<span class="text-muted-foreground">Invited Email:</span>
-							<span class="font-medium">{data.invite.email}</span>
+				<!-- Collapsed state - show minimal info -->
+				{#if isEventCardCollapsed}
+					<div class="mt-4 space-y-2">
+						<div class="flex items-center gap-2 text-sm">
+							<Calendar size={16} class="text-primary" />
+							<span class="font-medium">{data.event.name}</span>
+							<span class="text-muted-foreground">•</span>
+							<span>{formatDate(data.event.bounds.start)}</span>
 						</div>
-						<div class="flex justify-between">
-							<span class="text-muted-foreground">Status:</span>
+						<div class="flex items-center gap-2 text-sm">
 							<span class="font-medium {getStatusColor(data.invite.status)}">
 								{getStatusText(data.invite.status)}
 							</span>
 						</div>
-						<div class="flex justify-between">
-							<span class="text-muted-foreground">Invited On:</span>
-							<span class="font-medium">
-								{new Date(data.invite.createdAt).toLocaleDateString()}
-							</span>
-						</div>
-					</div>
-				</div>
-
-				<!-- Authentication and Calendar Access Steps -->
-				{#if !session?.data?.session}
-					<!-- Step 1: Google Sign In -->
-					<div class="bg-primary/5 border-primary/20 mb-4 rounded-lg border p-4">
-						<h3 class="mb-2 flex items-center gap-2 font-medium">
-							<User size={16} class="text-primary" />
-							Step 1: Sign in with Google
-						</h3>
-						<p class="text-muted-foreground mb-3 text-sm">
-							You need to sign in with Google to respond to this invitation.
-						</p>
-						<Button
-							onclick={handleGoogleSignIn}
-							disabled={authLoading}
-							class="flex items-center gap-2"
-						>
-							<GoogleLogo size={16} />
-							{authLoading ? 'Signing in...' : 'Sign in with Google'}
-						</Button>
-					</div>
-				{:else if !isInvitedUser}
-					<!-- Wrong User Warning -->
-					<div class="mb-4 rounded-lg border border-red-200 bg-red-50 p-4">
-						<h3 class="mb-2 flex items-center gap-2 font-medium text-red-700">
-							<X size={16} />
-							Wrong Account
-						</h3>
-						<p class="mb-2 text-sm text-red-600">
-							You are signed in as <strong>{session.data.user.email}</strong>, but this invitation
-							is for <strong>{data.authStatus.invitedEmail}</strong>.
-						</p>
-						<p class="mb-3 text-sm text-red-600">
-							Please sign in with the correct Google account to respond to this invitation.
-						</p>
-						<Button
-							onclick={() => (window.location.href = '/auth/login')}
-							variant="outline"
-							class="flex items-center gap-2 border-red-300 text-red-700 hover:bg-red-50"
-						>
-							<GoogleLogo size={16} />
-							Sign in with different account
-						</Button>
-					</div>
-				{:else if !hasCalendarAccess}
-					<!-- Step 2: Calendar Access -->
-					<div class="bg-secondary/5 border-secondary/20 mb-4 rounded-lg border p-4">
-						<h3 class="mb-2 flex items-center gap-2 font-medium">
-							<Calendar size={16} class="text-secondary" />
-							Step 2: Grant Calendar Access
-						</h3>
-						<p class="text-muted-foreground mb-3 text-sm">
-							To accept this invitation, we need access to your Google Calendar to check for
-							conflicts.
-						</p>
-						<div class="text-muted-foreground mb-3 text-xs">
-							Currently signed in as: <strong>{session.data.user.email}</strong>
-						</div>
-						<Button
-							onclick={requestCalendarAccess}
-							disabled={calendarLoading}
-							variant="secondary"
-							class="flex items-center gap-2"
-						>
-							<Calendar size={16} />
-							{calendarLoading ? 'Requesting access...' : 'Grant Calendar Access'}
-						</Button>
-					</div>
-				{:else}
-					<!-- Authentication Success -->
-					<div class="mb-4 rounded-lg border border-green-200 bg-green-50 p-4">
-						<h3 class="mb-2 flex items-center gap-2 font-medium text-green-700">
-							<Check size={16} />
-							Ready to Respond
-						</h3>
-						<p class="text-sm text-green-600">
-							Signed in as <strong>{session.data.user.email}</strong> with calendar access.
-						</p>
-					</div>
-				{/if}
-
-				<!-- Response Buttons -->
-				{#if data.invite.status === 'pending' && !responseSubmitted && canRespond}
-					<div class="flex gap-3 pt-4">
-						<Button
-							onclick={() => respondToInvite('accepted')}
-							disabled={loading}
-							class="flex flex-1 items-center justify-center gap-2"
-						>
-							<Check size={16} />
-							{loading ? 'Responding...' : 'Accept Invitation'}
-						</Button>
-						<Button
-							variant="outline"
-							onclick={() => respondToInvite('declined')}
-							disabled={loading}
-							class="flex flex-1 items-center justify-center gap-2"
-						>
-							<X size={16} />
-							Decline
-						</Button>
-					</div>
-				{:else if data.invite.status === 'pending' && !canRespond}
-					<div class="py-4 text-center">
-						<p class="text-muted-foreground text-sm">
-							Complete the steps above to respond to this invitation.
-						</p>
-					</div>
-				{:else}
-					<div class="py-4 text-center">
-						{#if data.invite.status === 'accepted'}
-							<div class="flex items-center justify-center gap-2 font-medium text-green-600">
-								<Check size={20} />
-								You have accepted this invitation
-							</div>
-						{:else if data.invite.status === 'declined'}
-							<div class="flex items-center justify-center gap-2 font-medium text-red-600">
-								<X size={20} />
-								You have declined this invitation
-							</div>
-						{/if}
-
-						{#if responseSubmitted}
-							<p class="text-muted-foreground mt-2 text-sm">Thank you for your response!</p>
-						{/if}
-					</div>
-				{/if}
-
-				<!-- Event Status -->
-				{#if data.event.status === EventStatus.CANCELLED}
-					<div class="bg-destructive/10 border-destructive/20 rounded-lg border p-4 text-center">
-						<p class="text-destructive font-medium">This event has been cancelled</p>
 					</div>
 				{/if}
 			</div>
-		</div>
 
-		<!-- Chat Interface - Shows after RSVP -->
-		<div class="bg-card border-border mt-6 overflow-hidden rounded-lg border shadow-lg">
-			<div class="bg-primary/5 border-border border-b p-4">
-				<h2 class="text-card-foreground flex items-center gap-2 text-lg font-semibold">
-					<ChatCircle size={20} class="text-primary" />
-					Event Planning Chat
-				</h2>
-				<p class="text-muted-foreground mt-1 text-sm">
-					Let's discuss the details for "{data.event.name}"
-				</p>
-			</div>
+			<!-- Event Details - hidden when collapsed -->
+			{#if !isEventCardCollapsed}
+				<div class="space-y-4 p-6">
+					<div class="space-y-3">
+						<h2 class="text-card-foreground text-xl font-semibold">{data.event.name}</h2>
 
-			<div class="flex h-96 flex-col">
-				<div class="flex-1 overflow-hidden">
-					<Conversation class="h-full">
-						<ConversationContent>
-							{#if visibleMessages.length === 0}
-								<ConversationEmptyState
-									description="Messages will appear here as the conversation progresses."
-									title="Start a conversation"
-								>
-									{#snippet icon()}
-										<ChatCircle class="size-6" />
-									{/snippet}
-								</ConversationEmptyState>
-							{:else}
-								{#each visibleMessages as messageData, index (messageData.key)}
-									<div class="flex gap-3 p-4 {index % 2 === 0 ? 'bg-muted/20' : ''}">
-										<div
-											class="bg-primary/10 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full"
-										>
-											{#if messageData.name === 'Assistant'}
-												<ChatCircle size={16} class="text-primary" />
-											{:else}
-												<User size={16} class="text-primary" />
-											{/if}
-										</div>
-										<div class="min-w-0 flex-1">
-											<div class="mb-1 flex items-center gap-2">
-												<span class="text-card-foreground text-sm font-medium"
-													>{messageData.name}</span
-												>
-											</div>
-											<div class="text-card-foreground/90 text-sm">
-												{messageData.value}
-											</div>
-										</div>
-									</div>
-								{/each}
+						{#if data.event.description}
+							<p class="text-muted-foreground">{data.event.description}</p>
+						{/if}
+
+						<div class="space-y-2">
+							<div class="flex items-center gap-2 text-sm">
+								<Calendar size={16} class="text-primary" />
+								<span class="font-medium">When:</span>
+								<span>{formatDate(data.event.bounds.start)}</span>
+							</div>
+
+							<div class="flex items-center gap-2 text-sm">
+								<Clock size={16} class="text-primary" />
+								<span class="font-medium">Duration:</span>
+								<span>
+									{formatDate(data.event.bounds.start)} - {formatDate(data.event.bounds.end)}
+								</span>
+							</div>
+
+							<div class="flex items-center gap-2 text-sm">
+								<User size={16} class="text-primary" />
+								<span class="font-medium">Organizer:</span>
+								<span>{data.event.organizerId?.name || 'Unknown'}</span>
+							</div>
+						</div>
+					</div>
+
+					<!-- Invite Details -->
+					<div class="bg-muted/50 rounded-lg p-4">
+						<h3 class="mb-2 font-medium">Invitation Details</h3>
+						<div class="space-y-1 text-sm">
+							<div class="flex justify-between">
+								<span class="text-muted-foreground">Invited Email:</span>
+								<span class="font-medium">{data.invite.email}</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-muted-foreground">Status:</span>
+								<span class="font-medium {getStatusColor(data.invite.status)}">
+									{getStatusText(data.invite.status)}
+								</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-muted-foreground">Invited On:</span>
+								<span class="font-medium">
+									{new Date(data.invite.createdAt).toLocaleDateString()}
+								</span>
+							</div>
+						</div>
+					</div>
+
+					<!-- Authentication and Calendar Access Steps -->
+					{#if !session?.data?.session}
+						<!-- Step 1: Google Sign In -->
+						<div class="bg-primary/5 border-primary/20 mb-4 rounded-lg border p-4">
+							<h3 class="mb-2 flex items-center gap-2 font-medium">
+								<User size={16} class="text-primary" />
+								Step 1: Sign in with Google
+							</h3>
+							<p class="text-muted-foreground mb-3 text-sm">
+								You need to sign in with Google to respond to this invitation.
+							</p>
+							<Button
+								onclick={handleGoogleSignIn}
+								disabled={authLoading}
+								class="flex items-center gap-2"
+							>
+								<GoogleLogo size={16} />
+								{authLoading ? 'Signing in...' : 'Sign in with Google'}
+							</Button>
+						</div>
+					{:else if !isInvitedUser}
+						<!-- Wrong User Warning -->
+						<div class="mb-4 rounded-lg border border-red-200 bg-red-50 p-4">
+							<h3 class="mb-2 flex items-center gap-2 font-medium text-red-700">
+								<X size={16} />
+								Wrong Account
+							</h3>
+							<p class="mb-2 text-sm text-red-600">
+								You are signed in as <strong>{session.data.user.email}</strong>, but this invitation
+								is for <strong>{data.authStatus.invitedEmail}</strong>.
+							</p>
+							<p class="mb-3 text-sm text-red-600">
+								Please sign in with the correct Google account to respond to this invitation.
+							</p>
+							<Button
+								onclick={handleGoogleSignIn}
+								variant="outline"
+								class="flex items-center gap-2 border-red-300 text-red-700 hover:bg-red-50"
+							>
+								<GoogleLogo size={16} />
+								Sign in with different account
+							</Button>
+						</div>
+					{:else if !hasCalendarAccess}
+						<!-- Step 2: Calendar Access -->
+						<div class="bg-secondary/5 border-secondary/20 mb-4 rounded-lg border p-4">
+							<h3 class="mb-2 flex items-center gap-2 font-medium">
+								<Calendar size={16} class="text-secondary" />
+								Step 2: Grant Calendar Access
+							</h3>
+							<p class="text-muted-foreground mb-3 text-sm">
+								To accept this invitation, we need access to your Google Calendar to check for
+								conflicts.
+							</p>
+							<div class="text-muted-foreground mb-3 text-xs">
+								Currently signed in as: <strong>{session.data.user.email}</strong>
+							</div>
+							<Button
+								onclick={requestCalendarAccess}
+								disabled={calendarLoading}
+								variant="secondary"
+								class="flex items-center gap-2"
+							>
+								<Calendar size={16} />
+								{calendarLoading ? 'Requesting access...' : 'Grant Calendar Access'}
+							</Button>
+						</div>
+					{:else}
+						<!-- Authentication Success -->
+						<div class="mb-4 rounded-lg border border-green-200 bg-green-50 p-4">
+							<h3 class="mb-2 flex items-center gap-2 font-medium text-green-700">
+								<Check size={16} />
+								Ready to Respond
+							</h3>
+							<p class="text-sm text-green-600">
+								Signed in as <strong>{session.data.user.email}</strong> with calendar access.
+							</p>
+						</div>
+					{/if}
+
+					<!-- Response Buttons -->
+					{#if data.invite.status === 'pending' && !responseSubmitted && canRespond}
+						<div class="flex gap-3 pt-4">
+							<Button
+								onclick={() => respondToInvite('accepted')}
+								disabled={loading}
+								class="flex flex-1 items-center justify-center gap-2"
+							>
+								<Check size={16} />
+								{loading ? 'Responding...' : 'Accept Invitation'}
+							</Button>
+							<Button
+								variant="outline"
+								onclick={() => respondToInvite('declined')}
+								disabled={loading}
+								class="flex flex-1 items-center justify-center gap-2"
+							>
+								<X size={16} />
+								Decline
+							</Button>
+						</div>
+					{:else if data.invite.status === 'pending' && !canRespond}
+						<div class="py-4 text-center">
+							<p class="text-muted-foreground text-sm">
+								Complete the steps above to respond to this invitation.
+							</p>
+						</div>
+					{:else}
+						<div class="py-4 text-center">
+							{#if data.invite.status === 'accepted'}
+								<div class="flex items-center justify-center gap-2 font-medium text-green-600">
+									<Check size={20} />
+									You have accepted this invitation
+								</div>
+							{:else if data.invite.status === 'declined'}
+								<div class="flex items-center justify-center gap-2 font-medium text-red-600">
+									<X size={20} />
+									You have declined this invitation
+								</div>
 							{/if}
-						</ConversationContent>
-						<ConversationScrollButton />
-					</Conversation>
+
+							{#if responseSubmitted}
+								<p class="text-muted-foreground mt-2 text-sm">Thank you for your response!</p>
+							{/if}
+						</div>
+					{/if}
+
+					<!-- Event Status -->
+					{#if data.event.status === EventStatus.CANCELLED}
+						<div class="bg-destructive/10 border-destructive/20 rounded-lg border p-4 text-center">
+							<p class="text-destructive font-medium">This event has been cancelled</p>
+						</div>
+					{/if}
+				</div>
+			{/if}
+		</div>
+
+		<!-- Chat Interface - Shows after RSVP and when authenticated -->
+		{#if showChat && data.authStatus.isAuthenticated}
+			<div
+				id="chat-interface"
+				class="bg-card border-border mt-6 overflow-hidden rounded-lg border shadow-lg"
+			>
+				<div class="bg-primary/5 border-border border-b p-4">
+					<h2 class="text-card-foreground flex items-center gap-2 text-lg font-semibold">
+						<ChatCircle size={20} class="text-primary" />
+						Event Planning Chat
+					</h2>
+					<div class="flex items-center justify-between">
+						<p class="text-muted-foreground mt-1 text-sm">
+							Let's discuss the details for "{data.event.name}"
+						</p>
+
+						<!-- Manual calendar analysis trigger -->
+						{#if hasCalendarAccess && data.invite.status === 'accepted'}
+							<Button
+								variant="ghost"
+								size="sm"
+								onclick={fetchUserCalendarAndAnalyzeFreeTime}
+								disabled={calendarAnalysisLoading}
+								class="flex items-center gap-2 text-xs"
+							>
+								<Calendar size={14} />
+								{calendarAnalysisLoading ? 'Analyzing...' : 'Check Free Times'}
+							</Button>
+						{/if}
+					</div>
 				</div>
 
-				<!-- Chat Input Interface -->
-				<div class="border-border border-t p-4">
-					<PromptInput globalDrop multiple onSubmit={handleSubmit}>
-						<PromptInputBody>
-							<PromptInputAttachments>
-								{#snippet children(attachment)}
-									<PromptInputAttachment data={attachment} />
-								{/snippet}
-							</PromptInputAttachments>
-							<PromptInputTextarea
-								bind:value={text}
-								onchange={(e) => (text = (e.target as HTMLTextAreaElement).value)}
-								placeholder="Type your message about the event..."
-							/>
-						</PromptInputBody>
-						<PromptInputToolbar>
-							<PromptInputTools>
-								<!-- <PromptInputActionMenu>
-										<PromptInputActionMenuTrigger />
-										<PromptInputActionMenuContent>
-											<PromptInputActionAddAttachments />
-										</PromptInputActionMenuContent>
-									</PromptInputActionMenu> -->
-							</PromptInputTools>
-							<PromptInputSubmit {status} />
-						</PromptInputToolbar>
-					</PromptInput>
+				<!-- Main content area with side-by-side layout -->
+				<div class="flex h-[600px]">
+					<!-- Chat section (left side) -->
+					<div class="flex flex-1 flex-col">
+						<div class="flex-1 overflow-hidden">
+							<Conversation class="h-full">
+								<ConversationContent>
+									{#if visibleMessages.length === 0}
+										<ConversationEmptyState
+											description="Messages will appear here as the conversation progresses."
+											title="Start a conversation"
+										>
+											{#snippet icon()}
+												<ChatCircle class="size-6" />
+											{/snippet}
+										</ConversationEmptyState>
+									{:else}
+										{#each visibleMessages as messageData, index (messageData.key)}
+											<div class="flex gap-3 p-4 {index % 2 === 0 ? 'bg-muted/20' : ''}">
+												<div
+													class="bg-primary/10 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full"
+												>
+													{#if messageData.name === 'Assistant'}
+														<ChatCircle size={16} class="text-primary" />
+													{:else}
+														<User size={16} class="text-primary" />
+													{/if}
+												</div>
+												<div class="min-w-0 flex-1">
+													<div class="mb-1 flex items-center gap-2">
+														<span class="text-card-foreground text-sm font-medium"
+															>{messageData.name}</span
+														>
+													</div>
+													<div class="text-card-foreground/90 text-sm whitespace-pre-line">
+														{messageData.value}
+													</div>
+												</div>
+											</div>
+										{/each}
+
+										<!-- Calendar analysis loading indicator -->
+										{#if calendarAnalysisLoading}
+											<div class="flex gap-3 p-4">
+												<div
+													class="bg-primary/10 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full"
+												>
+													<ChatCircle size={16} class="text-primary" />
+												</div>
+												<div class="min-w-0 flex-1">
+													<div class="mb-1 flex items-center gap-2">
+														<span class="text-card-foreground text-sm font-medium">Assistant</span>
+													</div>
+													<div class="text-card-foreground/90 flex items-center gap-2 text-sm">
+														<div
+															class="border-primary h-4 w-4 animate-spin rounded-full border-b-2"
+														></div>
+														Analyzing everyone's calendars for free time slots...
+													</div>
+												</div>
+											</div>
+										{/if}
+									{/if}
+								</ConversationContent>
+								<ConversationScrollButton />
+							</Conversation>
+						</div>
+
+						<!-- Chat Input Interface -->
+						<div class="border-border border-t p-4">
+							<PromptInput globalDrop multiple onSubmit={handleSubmit}>
+								<PromptInputBody>
+									<PromptInputAttachments>
+										{#snippet children(attachment)}
+											<PromptInputAttachment data={attachment} />
+										{/snippet}
+									</PromptInputAttachments>
+									<PromptInputTextarea
+										bind:value={text}
+										onchange={(e) => (text = (e.target as HTMLTextAreaElement).value)}
+										placeholder="Type your message about the event..."
+									/>
+								</PromptInputBody>
+								<PromptInputToolbar>
+									<PromptInputTools></PromptInputTools>
+									<PromptInputSubmit {status} />
+								</PromptInputToolbar>
+							</PromptInput>
+						</div>
+					</div>
 				</div>
 			</div>
-		</div>
+		{/if}
 	</div>
+	<!-- Calendar visualization (right side) -->
+	{#if showCalendarVisualization && calendarOptions}
+		<div class="border-border flex h-screen w-full flex-col border-l">
+			<div class="bg-muted/30 border-border border-b p-3">
+				<h3 class="text-card-foreground flex items-center gap-2 text-sm font-medium">
+					<Calendar size={16} class="text-primary" />
+					Availability Calendar
+				</h3>
+				<div class="text-muted-foreground mt-1 text-xs">
+					🟢 Available • 🟡 Partial • 🟠 Conflicts • 🔴 Out of bounds
+				</div>
+			</div>
+			<div class="flex-1 overflow-hidden p-2">
+				<EventCalendar plugins={[TimeGrid, Interaction]} options={calendarOptions} />
+			</div>
+		</div>
+	{:else}
+		<div class="flex flex-1 items-center justify-center">loading calendar</div>
+	{/if}
 </div>

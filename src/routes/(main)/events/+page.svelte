@@ -7,6 +7,7 @@
 	import CreateEditDialog from './components/createEditDialog.svelte';
 
 	let { data }: { data: any } = $props();
+	console.log(data);
 
 	let events = $state(data.events || []);
 	let showDialog = $state(false);
@@ -17,6 +18,7 @@
 	// Form state
 	let formData = $state({
 		eventType: EventType.SMALL,
+		organizerId: undefined as string | undefined,
 		name: '',
 		description: '',
 		bounds: {
@@ -30,6 +32,7 @@
 	function resetForm() {
 		formData = {
 			eventType: EventType.SMALL,
+			organizerId: undefined,
 			name: '',
 			description: '',
 			bounds: {
@@ -62,15 +65,17 @@
 	async function createEvent() {
 		loading = true;
 		try {
+			const eventPayload = {
+				...formData,
+				organizerId: data.user?._id || data.user?.id // Use actual logged-in user ID
+			};
+			
 			const response = await fetch('/api/events', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json'
 				},
-				body: JSON.stringify({
-					...formData,
-					organizer_id: data.user?._id || data.user?.id // Use actual logged-in user ID
-				})
+				body: JSON.stringify(eventPayload)
 			});
 
 			const result = await response.json();
@@ -148,6 +153,7 @@
 		editingEvent = event._id;
 		formData = {
 			eventType: event.eventType,
+			organizerId: event.organizerId?._id || event.organizerId,
 			name: event.name,
 			description: event.description || '',
 			bounds: {
@@ -189,11 +195,11 @@
 		try {
 			const inviteUrl = `${window.location.origin}/rsvp/${inviteCode}`;
 			await navigator.clipboard.writeText(inviteUrl);
-			
+
 			// Add to copied set and remove after 2 seconds
 			copiedInvites.add(inviteCode);
 			copiedInvites = copiedInvites; // Trigger reactivity
-			
+
 			setTimeout(() => {
 				copiedInvites.delete(inviteCode);
 				copiedInvites = copiedInvites; // Trigger reactivity
@@ -214,15 +220,15 @@
 </header>
 
 <section class="flex flex-col gap-6 p-4">
-	<div class="flex items-center justify-between">
-		<h1 class="text-3xl font-thin">Event Management</h1>
+	<div class="border-primary flex items-center justify-between border-b pb-4">
+		<h1 class="text-3xl font-light">Event Management</h1>
 		<Button onclick={openCreateDialog} class="flex items-center gap-2">
 			<Plus size={16} weight="duotone" />
 			Create Event
 		</Button>
 	</div>
 
-	<CreateEditDialog 
+	<CreateEditDialog
 		bind:open={showDialog}
 		{editingEvent}
 		bind:formData
@@ -233,52 +239,70 @@
 
 	<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
 		{#each events as event (event._id)}
-			<div class="rounded-lg border border-border bg-card p-4 transition-shadow hover:shadow-md">
-				<div class="mb-3 flex items-start justify-between">
+			<div
+				class="border-border bg-card hover:border-primary flex flex-col gap-2 rounded-lg border p-4 transition-colors h-full "
+			>
+				<div class="border-primary/20 flex items-center justify-between border-b">
 					<div class="flex items-center gap-2">
 						{#if event.eventType === EventType.SMALL}
-							<Users size={16} class="text-primary" />
+							<Users size={20} class="text-primary" weight="duotone" />
 						{:else}
-							<Ticket size={16} class="text-secondary" />
+							<Ticket size={20} class="text-primary" weight="duotone" />
 						{/if}
-						<span class="text-xs font-medium text-muted-foreground uppercase">
-							{event.eventType}
+						<span class="text-muted-foreground text-xs font-medium uppercase">
+							{event.eventType} EVENT
 						</span>
 					</div>
 					<span class="rounded-full px-2 py-1 text-xs {getStatusColor(event.status)}">
 						{event.status}
 					</span>
+
+					<div class="text-muted-foreground flex items-center text-xs">
+						<span>Organizer: {event.organizerId?.name || 'Unknown'}</span>
+					</div>
 				</div>
 
-				<h3 class="mb-2 text-lg font-semibold text-card-foreground">{event.name}</h3>
+				<div>
+					<h3 class="text-card-foreground mb-2 text-lg font-semibold">{event.name}</h3>
 
-				{#if event.description}
-					<p class="mb-3 line-clamp-2 text-sm text-muted-foreground">{event.description}</p>
-				{/if}
-
-				<div class="mb-3 flex items-center gap-1 text-sm text-muted-foreground">
-					<Calendar size={14} />
-					<span>{formatDate(event.bounds.start)}</span>
-				</div>
-
-				<div class="mb-3 flex items-center gap-4 text-xs text-muted-foreground">
-					<span>Organizer: {event.organizer_id?.name || 'Unknown'}</span>
-					{#if event.eventType === EventType.SMALL && event.inviteList && event.inviteList.length > 0}
-						<span class="flex items-center gap-1">
-							<Users size={12} />
-							{event.inviteList.length} invited
-						</span>
+					{#if event.description}
+						<p class="text-muted-foreground mb-3 line-clamp-2 text-sm">{event.description}</p>
 					{/if}
 				</div>
 
+				<div class="text-muted-foreground flex flex-row items-center justify-between">
+					<span class="flex items-center gap-2">
+						<Calendar size={14} />
+						<span class="text-sm">{formatDate(event.bounds.start)}</span>
+					</span>
+					<span class="flex items-center gap-2">
+						<Calendar size={14} />
+						<span class="text-sm">{formatDate(event.bounds.end)}</span>
+					</span>
+				</div>
+
 				{#if event.eventType === EventType.SMALL && event.inviteList && event.inviteList.length > 0}
-					<div class="mb-3 space-y-1">
-						<p class="text-xs font-medium text-muted-foreground">Invite Links:</p>
-						<div class="max-h-24 overflow-y-auto space-y-1">
+					<div class="border-primary/20 flex flex-col gap-2 rounded-md border mt-2">
+						<div class="bg-accent flex flex-row items-center justify-between p-2">
+							<p class="text-muted-foreground text-sm font-medium">Invite Links:</p>
+							{#if event.eventType === EventType.SMALL && event.inviteList && event.inviteList.length > 0}
+								<span class="flex items-center gap-1 text-sm">
+									<Users size={12} />
+									{event.inviteList.length} invited
+								</span>
+							{/if}
+						</div>
+						<div class="flex flex-col p-2">
 							{#each event.inviteList as invite, index (invite.inviteCode || `${invite.email}-${index}`)}
-								<div class="flex items-center gap-2 text-xs bg-muted/50 rounded p-2">
+								<div class="bg-muted/50 flex items-center gap-2 rounded text-xs">
 									<span class="flex-1 truncate">{invite.email}</span>
-									<span class="px-1 py-0.5 rounded text-xs {invite.status === 'accepted' ? 'bg-green-100 text-green-700' : invite.status === 'declined' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}">
+									<span
+										class="rounded px-1 py-0.5 text-xs {invite.status === 'accepted'
+											? 'bg-green-100 text-green-700'
+											: invite.status === 'declined'
+												? 'bg-red-100 text-red-700'
+												: 'bg-yellow-100 text-yellow-700'}"
+									>
 										{invite.status}
 									</span>
 									{#if invite.inviteCode}
@@ -286,7 +310,7 @@
 											size="sm"
 											variant="ghost"
 											onclick={() => copyInviteLink(invite.inviteCode)}
-											class="h-6 w-6 p-0 flex-shrink-0"
+											class="h-6 w-6 flex-shrink-0 p-0"
 											title="Copy invite link"
 										>
 											{#if copiedInvites.has(invite.inviteCode)}
@@ -296,7 +320,7 @@
 											{/if}
 										</Button>
 									{:else}
-										<span class="text-xs text-muted-foreground">No link</span>
+										<span class="text-muted-foreground text-xs">No link</span>
 									{/if}
 								</div>
 							{/each}
@@ -304,7 +328,7 @@
 					</div>
 				{/if}
 
-				<div class="flex gap-2">
+				<div class="flex flex-row gap-2 self-end align-end mt-auto">
 					<Button
 						size="sm"
 						variant="outline"
@@ -318,7 +342,7 @@
 						size="sm"
 						variant="outline"
 						onclick={() => deleteEvent(event._id)}
-						class="flex items-center gap-1 text-destructive hover:text-destructive"
+						class="text-destructive hover:text-destructive flex items-center gap-1"
 					>
 						<Trash size={12} />
 						Delete

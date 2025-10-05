@@ -12,7 +12,7 @@ const EventSchema = new Schema<IEvent>({
 		enum: Object.values(EventType),
 		required: true
 	},
-	organizer_id: {
+	organizerId: {
 		type: Schema.Types.ObjectId,
 		ref: 'User',
 		required: true

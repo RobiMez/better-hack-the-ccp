@@ -46,4 +46,4 @@ const AccountSchema = new Schema<IAccount>({
 	timestamps: true
 });
 
-export const Account = mongoose.models.Account || mongoose.model<IAccount>('Account', AccountSchema);
+export const Account = mongoose.models.Account || mongoose.model<IAccount>('Account', AccountSchema, "account");

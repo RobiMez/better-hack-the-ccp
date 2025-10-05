@@ -1,5 +1,5 @@
 <script lang="ts">
-	import * as Dialog from "$lib/components/ui/dialog/index.js";
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -7,7 +7,7 @@
 	import { Plus, X } from 'phosphor-svelte';
 	import { generateInviteCode, generateQRCode } from '$lib/utils/invite.js';
 
-	let { 
+	let {
 		open = $bindable(false),
 		editingEvent = null,
 		formData = $bindable(),
@@ -52,20 +52,22 @@
 			if (!formData.inviteList) {
 				formData.inviteList = [];
 			}
-			
+
 			// Check if email already exists
-			const emailExists = formData.inviteList.some((invite: any) => invite.email === newInviteEmail.trim());
+			const emailExists = formData.inviteList.some(
+				(invite: any) => invite.email === newInviteEmail.trim()
+			);
 			if (!emailExists) {
 				const inviteCode = generateInviteCode();
 				let qrCodeUrl = '';
-				
+
 				try {
 					// Generate QR code for the invite
 					qrCodeUrl = await generateQRCode(inviteCode);
 				} catch (error) {
 					console.error('Failed to generate QR code:', error);
 				}
-				
+
 				formData.inviteList.push({
 					email: newInviteEmail.trim(),
 					status: 'pending',
@@ -96,6 +98,16 @@
 	}
 </script>
 
+<style>
+	:global([data-slot="dialog-overlay"]) {
+		z-index: 9998 !important;
+	}
+	
+	:global([data-slot="dialog-content"]) {
+		z-index: 9999 !important;
+	}
+</style>
+
 <Dialog.Root bind:open>
 	<Dialog.Content class="sm:max-w-[600px]">
 		<Dialog.Header>
@@ -103,7 +115,9 @@
 				{editingEvent ? 'Edit Event' : 'Create New Event'}
 			</Dialog.Title>
 			<Dialog.Description>
-				{editingEvent ? 'Update the event details below.' : 'Fill in the details to create a new event.'}
+				{editingEvent
+					? 'Update the event details below.'
+					: 'Fill in the details to create a new event.'}
 			</Dialog.Description>
 		</Dialog.Header>
 
@@ -112,7 +126,7 @@
 				<Label for="eventType">Event Type</Label>
 				<select
 					bind:value={formData.eventType}
-					class="w-full rounded-md border border-border p-2"
+					class="border-border w-full rounded-md border p-2"
 					disabled={editingEvent}
 				>
 					<option value={EventType.SMALL}>Small Event</option>
@@ -130,7 +144,7 @@
 				<textarea
 					bind:value={formData.description}
 					placeholder="Enter event description"
-					class="h-24 w-full resize-none rounded-md border border-border p-2 bg-background text-foreground"
+					class="border-border bg-background text-foreground h-24 w-full resize-none rounded-md border p-2"
 				></textarea>
 			</div>
 
@@ -149,15 +163,15 @@
 					<Label for="invites">Invite List</Label>
 					<div class="space-y-2">
 						<div class="flex gap-2">
-							<Input 
+							<Input
 								bind:value={newInviteEmail}
 								placeholder="Enter email address"
 								type="email"
 								onkeypress={handleKeyPress}
 								class="flex-1"
 							/>
-							<Button 
-								type="button" 
+							<Button
+								type="button"
 								onclick={addInvite}
 								disabled={!newInviteEmail.trim() || !isValidEmail(newInviteEmail)}
 								size="sm"
@@ -167,36 +181,36 @@
 								Add
 							</Button>
 						</div>
-						
+
 						{#if formData.inviteList && formData.inviteList.length > 0}
-							<div class="max-h-64 overflow-y-auto space-y-2">
+							<div class="max-h-64 space-y-2 overflow-y-auto">
 								{#each formData.inviteList as invite, index (invite.email)}
-									<div class="border border-border rounded-lg p-3 space-y-2">
+									<div class="border-border space-y-2 rounded-lg border p-3">
 										<div class="flex items-center justify-between">
 											<span class="text-sm font-medium">{invite.email}</span>
-											<Button 
+											<Button
 												type="button"
 												onclick={() => removeInvite(index)}
 												size="sm"
 												variant="ghost"
-												class="h-6 w-6 p-0 text-destructive hover:text-destructive"
+												class="text-destructive hover:text-destructive h-6 w-6 p-0"
 											>
 												<X size={12} />
 											</Button>
 										</div>
-										
+
 										{#if invite.qrCodeUrl}
 											<div class="flex items-start gap-3">
 												<div class="flex-shrink-0">
-													<img 
-														src={invite.qrCodeUrl} 
+													<img
+														src={invite.qrCodeUrl}
 														alt="QR Code for {invite.email}"
-														class="w-16 h-16 border border-border rounded"
+														class="border-border h-16 w-16 rounded border"
 													/>
 												</div>
-												<div class="flex-1 min-w-0">
-													<p class="text-xs text-muted-foreground mb-1">Invite Link:</p>
-													<code class="text-xs bg-muted p-1 rounded break-all">
+												<div class="min-w-0 flex-1">
+													<p class="text-muted-foreground mb-1 text-xs">Invite Link:</p>
+													<code class="bg-muted rounded p-1 text-xs break-all">
 														{window.location.origin}/rsvp/{invite.inviteCode}
 													</code>
 												</div>
@@ -205,25 +219,25 @@
 									</div>
 								{/each}
 							</div>
-							<p class="text-xs text-muted-foreground">
+							<p class="text-muted-foreground text-xs">
 								{formData.inviteList.length} invite{formData.inviteList.length !== 1 ? 's' : ''} added
 							</p>
 						{/if}
 					</div>
 				</div>
 			{/if}
-		</div>
+		</div>	
 
-		<div class="flex justify-end gap-2">
-			<Button variant="outline" onclick={handleCancel}>
-				Cancel
-			</Button>
-			<Button
-				onclick={handleSave}
-				disabled={loading || !formData.name || !formData.bounds.start || !formData.bounds.end}
-			>
-				{loading ? 'Saving...' : editingEvent ? 'Update Event' : 'Create Event'}
-			</Button>
-		</div>
+		<Dialog.Footer>
+			<div class="flex justify-end gap-2">
+				<Button variant="outline" onclick={handleCancel}>Cancel</Button>
+				<Button
+					onclick={handleSave}
+					disabled={loading || !formData.name || !formData.bounds.start || !formData.bounds.end}
+				>
+					{loading ? 'Saving...' : editingEvent ? 'Update Event' : 'Create Event'}
+				</Button>
+			</div>
+		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

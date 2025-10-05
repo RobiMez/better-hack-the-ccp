@@ -20,6 +20,18 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	// Whitelist RSVP routes - allow access without authentication
 	if (event.url.pathname.startsWith('/rsvp/')) {
+		const session = await auth.api.getSession({
+			headers: event.request.headers
+		});
+
+		if (!session || !session.session) {
+			// const loginUrl = `/auth/login?from=${encodeURIComponent(event.url.pathname)}`;
+			// redirect(302, loginUrl);
+		} else {
+			event.locals.user = session.user;
+			event.locals.session = session.session;
+		}
+
 		return svelteKitHandler({ event, resolve, auth, building });
 	}
 

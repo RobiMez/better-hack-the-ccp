@@ -43,7 +43,7 @@ export interface ITicketSlot {
 
 export interface IEvent extends Document {
 	eventType: EventType;
-	organizer_id: mongoose.Types.ObjectId;
+	organizerId: mongoose.Types.ObjectId;
 	name: string;
 	description?: string;
 	status: EventStatus;

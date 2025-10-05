@@ -9,7 +9,7 @@ export const GET: RequestHandler = async ({ params }) => {
 		await connectDB();
 		
 		const event = await Event.findById(params.id)
-			.populate('organizer_id', 'name email')
+			.populate('organizerId', 'name email')
 			.populate('rsvpList', 'name email');
 			
 		if (!event) {
@@ -29,7 +29,7 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 		await connectDB();
 		
 		const data = await request.json();
-		const { name, description, bounds, status, inviteList, ticketSlots } = data;
+		const { name, description, bounds, status, inviteList, ticketSlots, organizerId } = data;
 		
 		const event = await Event.findById(params.id);
 		if (!event) {
@@ -42,6 +42,9 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 		if (bounds) event.bounds = bounds;
 		if (status) event.status = status;
 		
+		// Only update organizerId if explicitly provided (for admin operations)
+		if (organizerId) event.organizerId = organizerId;
+		
 		// Update type-specific fields
 		if (event.eventType === 'SMALL' && inviteList !== undefined) {
 			event.inviteList = inviteList;
@@ -51,7 +54,7 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 		}
 		
 		await event.save();
-		await event.populate('organizer_id', 'name email');
+		await event.populate('organizerId', 'name email');
 		
 		return json({ event });
 	} catch (error) {
