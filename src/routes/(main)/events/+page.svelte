@@ -328,6 +328,37 @@
 					</div>
 				{/if}
 
+				{#if event.timeSlotPreferences && event.timeSlotPreferences.length > 0}
+					<div class="border-primary/20 flex flex-col gap-2 rounded-md border mt-2">
+						<div class="bg-accent flex flex-row items-center justify-between p-2">
+							<p class="text-muted-foreground text-sm font-medium">Time Slot Preferences:</p>
+							<span class="flex items-center gap-1 text-sm">
+								<Calendar size={12} />
+								{event.timeSlotPreferences.length} preference{event.timeSlotPreferences.length !== 1 ? 's' : ''}
+							</span>
+						</div>
+						<div class="flex flex-col gap-1 p-2">
+							{#each event.timeSlotPreferences as preference (preference._id)}
+								<div class="bg-muted/50 flex flex-col gap-1 rounded p-2 text-xs">
+									<div class="flex items-center justify-between">
+										<span class="font-medium">{preference.userEmail}</span>
+										{#if preference.userName}
+											<span class="text-muted-foreground">({preference.userName})</span>
+										{/if}
+									</div>
+									<div class="text-primary flex items-center gap-1 font-semibold">
+										<Calendar size={12} weight="duotone" />
+										<span>{preference.dayOfWeek}, {preference.date}</span>
+									</div>
+									<div class="text-muted-foreground">
+										{preference.startTime} - {preference.endTime}
+									</div>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
 				<div class="flex flex-row gap-2 self-end align-end mt-auto">
 					<Button
 						size="sm"

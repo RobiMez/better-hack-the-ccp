@@ -29,48 +29,51 @@ function findAvailabilityWithConflicts(
 	durations: number[] = [30, 60, 90, 120]
 ): AvailabilitySlot[] {
 	const slots: AvailabilitySlot[] = [];
-	
+
 	// Group events by participant email
 	const eventsByParticipant: Record<string, any[]> = {};
-	participantEmails.forEach(email => {
-		eventsByParticipant[email] = allParticipantEvents.filter(event => event.calendarOwner === email);
+	participantEmails.forEach((email) => {
+		eventsByParticipant[email] = allParticipantEvents.filter(
+			(event) => event.calendarOwner === email
+		);
 	});
-	
+
 	for (const duration of durations) {
 		let currentStart = new Date(startTime);
 		const endWindow = new Date(endTime);
-		
+
 		while (currentStart.getTime() + duration * 60 * 1000 <= endWindow.getTime()) {
 			const slotEnd = new Date(currentStart.getTime() + duration * 60 * 1000);
-			
+
 			// Check for conflicts in this time slot
 			const conflicts: ConflictInfo[] = [];
-			
+
 			for (const email of participantEmails) {
 				const participantEvents = eventsByParticipant[email] || [];
-				const conflictingEvents = participantEvents.filter(event => {
+				const conflictingEvents = participantEvents.filter((event) => {
 					const eventStart = new Date(event.start?.dateTime || event.start?.date);
 					const eventEnd = new Date(event.end?.dateTime || event.end?.date);
-					
+
 					// Check if event overlaps with our proposed slot
 					return eventStart < slotEnd && eventEnd > currentStart;
 				});
-				
+
 				if (conflictingEvents.length > 0) {
 					// Find the overlapping time period
 					for (const conflictEvent of conflictingEvents) {
 						const eventStart = new Date(conflictEvent.start?.dateTime || conflictEvent.start?.date);
 						const eventEnd = new Date(conflictEvent.end?.dateTime || conflictEvent.end?.date);
-						
+
 						const conflictStart = new Date(Math.max(currentStart.getTime(), eventStart.getTime()));
 						const conflictEnd = new Date(Math.min(slotEnd.getTime(), eventEnd.getTime()));
-						
+
 						// Check if we already have a conflict for this time period
-						const existingConflict = conflicts.find(c => 
-							c.start.getTime() === conflictStart.getTime() && 
-							c.end.getTime() === conflictEnd.getTime()
+						const existingConflict = conflicts.find(
+							(c) =>
+								c.start.getTime() === conflictStart.getTime() &&
+								c.end.getTime() === conflictEnd.getTime()
 						);
-						
+
 						if (existingConflict) {
 							// Add participant to existing conflict
 							if (!existingConflict.conflictingParticipants.includes(email)) {
@@ -87,7 +90,7 @@ function findAvailabilityWithConflicts(
 					}
 				}
 			}
-			
+
 			// If no conflicts, this is a fully available slot
 			if (conflicts.length === 0) {
 				slots.push({
@@ -96,7 +99,7 @@ function findAvailabilityWithConflicts(
 					duration,
 					conflicts: []
 				});
-				
+
 				// Move to next potential slot after this one
 				currentStart = new Date(slotEnd.getTime() + 15 * 60 * 1000); // 15 minutes after
 				break; // Found a slot for this duration, move to next duration
@@ -106,7 +109,7 @@ function findAvailabilityWithConflicts(
 			}
 		}
 	}
-	
+
 	return slots;
 }
 
@@ -119,48 +122,51 @@ function findPartialAvailability(
 	durations: number[] = [30, 60, 90, 120]
 ): AvailabilitySlot[] {
 	const slots: AvailabilitySlot[] = [];
-	
+
 	// Group events by participant email
 	const eventsByParticipant: Record<string, any[]> = {};
-	participantEmails.forEach(email => {
-		eventsByParticipant[email] = allParticipantEvents.filter(event => event.calendarOwner === email);
+	participantEmails.forEach((email) => {
+		eventsByParticipant[email] = allParticipantEvents.filter(
+			(event) => event.calendarOwner === email
+		);
 	});
-	
+
 	for (const duration of durations) {
 		let currentStart = new Date(startTime);
 		const endWindow = new Date(endTime);
-		
+
 		while (currentStart.getTime() + duration * 60 * 1000 <= endWindow.getTime()) {
 			const slotEnd = new Date(currentStart.getTime() + duration * 60 * 1000);
-			
+
 			// Check for conflicts in this time slot
 			const conflicts: ConflictInfo[] = [];
-			
+
 			for (const email of participantEmails) {
 				const participantEvents = eventsByParticipant[email] || [];
-				const conflictingEvents = participantEvents.filter(event => {
+				const conflictingEvents = participantEvents.filter((event) => {
 					const eventStart = new Date(event.start?.dateTime || event.start?.date);
 					const eventEnd = new Date(event.end?.dateTime || event.end?.date);
-					
+
 					// Check if event overlaps with our proposed slot
 					return eventStart < slotEnd && eventEnd > currentStart;
 				});
-				
+
 				if (conflictingEvents.length > 0) {
 					// Find the overlapping time period
 					for (const conflictEvent of conflictingEvents) {
 						const eventStart = new Date(conflictEvent.start?.dateTime || conflictEvent.start?.date);
 						const eventEnd = new Date(conflictEvent.end?.dateTime || conflictEvent.end?.date);
-						
+
 						const conflictStart = new Date(Math.max(currentStart.getTime(), eventStart.getTime()));
 						const conflictEnd = new Date(Math.min(slotEnd.getTime(), eventEnd.getTime()));
-						
+
 						// Check if we already have a conflict for this time period
-						const existingConflict = conflicts.find(c => 
-							c.start.getTime() === conflictStart.getTime() && 
-							c.end.getTime() === conflictEnd.getTime()
+						const existingConflict = conflicts.find(
+							(c) =>
+								c.start.getTime() === conflictStart.getTime() &&
+								c.end.getTime() === conflictEnd.getTime()
 						);
-						
+
 						if (existingConflict) {
 							// Add participant to existing conflict
 							if (!existingConflict.conflictingParticipants.includes(email)) {
@@ -177,7 +183,7 @@ function findPartialAvailability(
 					}
 				}
 			}
-			
+
 			// Include slots with conflicts (partial availability)
 			// Prioritize slots with fewer conflicts
 			if (conflicts.length > 0 && conflicts.length < participantEmails.length) {
@@ -188,27 +194,35 @@ function findPartialAvailability(
 					conflicts
 				});
 			}
-			
+
 			// Move to next time slot (30 minutes forward for partial availability)
 			currentStart = new Date(currentStart.getTime() + 30 * 60 * 1000);
 		}
 	}
-	
+
 	// Sort by fewest conflicts first, then by duration
-	return slots.sort((a, b) => {
-		const aConflicts = a.conflicts?.length || 0;
-		const bConflicts = b.conflicts?.length || 0;
-		if (aConflicts !== bConflicts) {
-			return aConflicts - bConflicts;
-		}
-		return b.duration - a.duration; // Prefer longer durations
-	}).slice(0, 5); // Return top 5 options
+	return slots
+		.sort((a, b) => {
+			const aConflicts = a.conflicts?.length || 0;
+			const bConflicts = b.conflicts?.length || 0;
+			if (aConflicts !== bConflicts) {
+				return aConflicts - bConflicts;
+			}
+			return b.duration - a.duration; // Prefer longer durations
+		})
+		.slice(0, 5); // Return top 5 options
 }
 
 // Helper function to make Google API calls with automatic token refresh
-async function makeGoogleAPICall(url: string, options: RequestInit, userId: string, maxRetries = 1, request: Request): Promise<Response> {
+async function makeGoogleAPICall(
+	url: string,
+	options: RequestInit,
+	userId: string,
+	maxRetries = 1,
+	request: Request
+): Promise<Response> {
 	let accessToken;
-	
+
 	// Get initial access token
 	try {
 		const tokenResponse = await auth.api.getAccessToken({
@@ -238,7 +252,7 @@ async function makeGoogleAPICall(url: string, options: RequestInit, userId: stri
 	// If we get a 401, try to refresh the token and retry
 	if (response.status === 401 && maxRetries > 0) {
 		console.log('Got 401, attempting to refresh token...');
-		
+
 		try {
 			// Refresh the token
 			const refreshResponse = await auth.api.refreshToken({
@@ -269,7 +283,6 @@ async function makeGoogleAPICall(url: string, options: RequestInit, userId: stri
 
 			response = await fetch(url, retryOptions);
 			console.log('Token refreshed and API call retried');
-			
 		} catch (refreshError) {
 			console.error('Failed to refresh token:', refreshError);
 			// Return the original 401 response if refresh fails
@@ -298,7 +311,7 @@ export const GET: RequestHandler = async ({ locals, request, url }) => {
 
 		// Fetch the event with populated organizer and RSVP details
 		const event = await Event.findById(eventId).populate('organizerId', 'name email');
-		
+
 		if (!event) {
 			return json({ error: 'Event not found' }, { status: 404 });
 		}
@@ -307,33 +320,37 @@ export const GET: RequestHandler = async ({ locals, request, url }) => {
 		const startTime = new Date(event.bounds.start);
 		const endTime = new Date(event.bounds.end);
 
-		console.log(`Analyzing free time for event "${event.name}" from ${startTime.toISOString()} to ${endTime.toISOString()}`);
+		console.log(
+			`Analyzing free time for event "${event.name}" from ${startTime.toISOString()} to ${endTime.toISOString()}`
+		);
 
 		// Collect all participant emails (host + accepted RSVPs)
 		const participantEmails = [event.organizerId.email];
-		
+
 		// Add accepted RSVP emails
 		if (event.inviteList) {
-			const acceptedInvites = event.inviteList.filter((invite: { status: string }) => invite.status === 'accepted');
+			const acceptedInvites = event.inviteList.filter(
+				(invite: { status: string }) => invite.status === 'accepted'
+			);
 			participantEmails.push(...acceptedInvites.map((invite: { email: string }) => invite.email));
 		}
 
 		console.log(`Found ${participantEmails.length} participants:`, participantEmails);
 
 		// Get User documents for all participants
-		const participants = await User.find({ 
-			email: { $in: participantEmails } 
+		const participants = await User.find({
+			email: { $in: participantEmails }
 		});
 
 		console.log(`Found ${participants.length} user records`);
 
 		// Get access tokens for all participants
 		const participantTokens: Array<{ email: string; accessToken: string; userId: string }> = [];
-		
+
 		for (const participant of participants) {
 			try {
 				// Find the account for this user with Google provider
-				const account = await Account.findOne({ 
+				const account = await Account.findOne({
 					userId: participant._id,
 					providerId: 'google'
 				});
@@ -354,13 +371,18 @@ export const GET: RequestHandler = async ({ locals, request, url }) => {
 		}
 
 		if (participantTokens.length === 0) {
-			return json({ 
-				error: 'No calendar access available for any participants',
-				details: 'Participants need to grant calendar access'
-			}, { status: 400 });
+			return json(
+				{
+					error: 'No calendar access available for any participants',
+					details: 'Participants need to grant calendar access'
+				},
+				{ status: 400 }
+			);
 		}
 
-		console.log(`Got ${participantTokens.length} access tokens out of ${participantEmails.length} participants`);
+		console.log(
+			`Got ${participantTokens.length} access tokens out of ${participantEmails.length} participants`
+		);
 
 		// Fetch calendar events for all participants
 		const allParticipantEvents: Array<{
@@ -391,7 +413,9 @@ export const GET: RequestHandler = async ({ locals, request, url }) => {
 				);
 
 				if (!calendarsResponse.ok) {
-					console.warn(`Failed to fetch calendars for ${participant.email}: ${calendarsResponse.statusText}`);
+					console.warn(
+						`Failed to fetch calendars for ${participant.email}: ${calendarsResponse.statusText}`
+					);
 					continue;
 				}
 
@@ -423,7 +447,9 @@ export const GET: RequestHandler = async ({ locals, request, url }) => {
 						);
 
 						if (!eventsResponse.ok) {
-							console.warn(`Failed to fetch events from calendar ${cal.summary} for ${participant.email}: ${eventsResponse.statusText}`);
+							console.warn(
+								`Failed to fetch events from calendar ${cal.summary} for ${participant.email}: ${eventsResponse.statusText}`
+							);
 							continue;
 						}
 
@@ -431,16 +457,26 @@ export const GET: RequestHandler = async ({ locals, request, url }) => {
 						const events = eventsData.items || [];
 
 						// Add participant info to each event
-						events.forEach((event: { calendarName?: string; calendarOwner?: string; calendarId?: string; participantEmail?: string }) => {
-							event.calendarName = cal.summary;
-							event.calendarOwner = participant.email;
-							event.calendarId = cal.id;
-							event.participantEmail = participant.email;
-						});
+						events.forEach(
+							(event: {
+								calendarName?: string;
+								calendarOwner?: string;
+								calendarId?: string;
+								participantEmail?: string;
+							}) => {
+								event.calendarName = cal.summary;
+								event.calendarOwner = participant.email;
+								event.calendarId = cal.id;
+								event.participantEmail = participant.email;
+							}
+						);
 
 						allParticipantEvents.push(...events);
 					} catch (error) {
-						console.warn(`Could not fetch events from calendar ${cal.summary} for ${participant.email}:`, error);
+						console.warn(
+							`Could not fetch events from calendar ${cal.summary} for ${participant.email}:`,
+							error
+						);
 					}
 				}
 			} catch (error) {
@@ -489,15 +525,17 @@ export const GET: RequestHandler = async ({ locals, request, url }) => {
 				}
 			},
 			participants: participantEmails,
-			participantsWithCalendarAccess: participantTokens.map(p => p.email),
+			participantsWithCalendarAccess: participantTokens.map((p) => p.email),
 			totalEvents: allParticipantEvents.length
 		});
-
 	} catch (error) {
 		console.error('Error fetching multi-user free times:', error);
-		return json({ 
-			error: 'Failed to fetch calendar data',
-			details: error instanceof Error ? error.message : 'Unknown error'
-		}, { status: 500 });
+		return json(
+			{
+				error: 'Failed to fetch calendar data',
+				details: error instanceof Error ? error.message : 'Unknown error'
+			},
+			{ status: 500 }
+		);
 	}
 };
