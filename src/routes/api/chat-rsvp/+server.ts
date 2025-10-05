@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { connectDB } from '$lib/db';
 import { Event } from '$lib/models';
 import { json, type RequestEvent } from '@sveltejs/kit';
+import { checkIfReadyToSchedule, autoScheduleEvent } from '$lib/auto-scheduler';
 
 export const POST = async ({ request }: RequestEvent) => {
 	console.log('Chat API called');
@@ -69,6 +70,36 @@ export const POST = async ({ request }: RequestEvent) => {
 
 						const timeStr = args.preferredTime ? `${args.preferredDate} at ${args.preferredTime}` : args.preferredDate;
 						const notesStr = args.notes ? ` I've also noted: "${args.notes}"` : '';
+						
+						// Check if all invites have set their preferred times
+						const allReady = await checkIfReadyToSchedule(event._id.toString());
+						
+						if (allReady) {
+							console.log('All invites have preferred times! Triggering auto-scheduling...');
+							
+							// Trigger auto-scheduling asynchronously
+							autoScheduleEvent(event._id.toString())
+								.then(success => {
+									if (success) {
+										console.log('Event successfully auto-scheduled!');
+									} else {
+										console.log('Auto-scheduling failed');
+									}
+								})
+								.catch(error => {
+									console.error('Auto-scheduling error:', error);
+								});
+							
+							return {
+								success: true,
+								message: `Perfect! I've registered your preferred time as ${timeStr}.${notesStr} Great news - everyone has shared their preferences! I'm now finding the best time that works for all ${event.inviteList?.filter((i: any) => i.status === 'accepted').length} participants and will automatically schedule "${event.name}" on everyone's calendar. You'll receive a calendar invitation shortly!`,
+								preferredTime: {
+									date: args.preferredDate,
+									time: args.preferredTime || 'flexible',
+									notes: args.notes || ''
+								}
+							};
+						}
 						
 						return {
 							success: true,
@@ -157,8 +188,7 @@ BE WARM AND CONVERSATIONAL.`;
 			tools: {
 				setPreferredTime: setPreferredTimeTool,
 				getEventDetails: getEventDetailsTool
-			},
-			maxSteps: 5
+			}
 		});
 
 		console.log('Stream created, getting full text with tool results');

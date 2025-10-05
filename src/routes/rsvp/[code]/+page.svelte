@@ -328,7 +328,8 @@
 				provider: 'google',
 				scopes: [
 					'https://www.googleapis.com/auth/calendar.readonly',
-					'https://www.googleapis.com/auth/calendar.freebusy'
+					'https://www.googleapis.com/auth/calendar.freebusy',
+					'https://www.googleapis.com/auth/calendar.events'
 				],
 				callbackURL: window.location.href // Redirect back to this invite page
 			});

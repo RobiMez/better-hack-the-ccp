@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { Event } from '$lib/models.js';
+import { Event, User } from '$lib/models.js';
 import { connectDB } from '$lib/db.js';
 import { isValidInviteCode } from '$lib/utils/invite.js';
 
@@ -19,6 +19,18 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			return json({ error: 'Invalid response' }, { status: 400 });
 		}
 		
+		// Find the user by email to get their userId
+		let userId = null;
+		if (userEmail) {
+			const user = await User.findOne({ email: userEmail.toLowerCase() });
+			if (user) {
+				userId = user._id;
+				console.log(`Linked invite to user ${userEmail} (${userId})`);
+			} else {
+				console.log(`User not found for email ${userEmail}`);
+			}
+		}
+		
 		// Find and update the invite
 		const event = await Event.findOneAndUpdate(
 			{ 'inviteList.inviteCode': code },
@@ -26,7 +38,8 @@ export const POST: RequestHandler = async ({ params, request }) => {
 				$set: { 
 					'inviteList.$.status': response,
 					'inviteList.$.updatedAt': new Date(),
-					...(userEmail && { 'inviteList.$.respondedByEmail': userEmail })
+					...(userEmail && { 'inviteList.$.respondedByEmail': userEmail }),
+					...(userId && { 'inviteList.$.userId': userId })
 				}
 			},
 			{ new: true }
