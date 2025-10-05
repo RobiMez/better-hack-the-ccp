@@ -103,6 +103,64 @@
 		selectedTimeSlot = null;
 	}
 
+	// Function to confirm and save preferred time slot
+	async function confirmPreferredTime() {
+		if (!selectedTimeSlot) {
+			console.error('No time slot selected');
+			return;
+		}
+
+		try {
+			console.log('Confirming preferred time slot:', selectedTimeSlot);
+
+			const response = await fetch('/api/time-slot-preference', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					timeSlot: selectedTimeSlot,
+					eventId: data.event._id
+				})
+			});
+
+			const result = await response.json();
+
+			if (!response.ok) {
+				throw new Error(result.error || 'Failed to save preference');
+			}
+
+			console.log('Time slot preference saved successfully:', result.preference);
+
+			// Add success message to chat
+			visibleMessages = [
+				...visibleMessages,
+				{
+					key: `preference-saved-${Date.now()}`,
+					value: `Your preferred time has been saved!\n\n**${selectedTimeSlot.dayOfWeek}, ${selectedTimeSlot.date}**\n**${selectedTimeSlot.startTime} - ${selectedTimeSlot.endTime}**\n\nThe organizer will be notified of your preference.`,
+					name: 'Assistant',
+					avatar: undefined
+				}
+			];
+
+			// Optionally clear the selection after saving
+			// clearTimeSlotSelection();
+		} catch (error) {
+			console.error('Error saving time slot preference:', error);
+			
+			// Add error message to chat
+			visibleMessages = [
+				...visibleMessages,
+				{
+					key: `preference-error-${Date.now()}`,
+					value: `Sorry, there was an error saving your preferred time. Please try again.`,
+					name: 'Assistant',
+					avatar: undefined
+				}
+			];
+		}
+	}
+
 	// Chat input state
 	let models = [
 		{ id: 'gpt-4', name: 'GPT-4' },
@@ -212,87 +270,82 @@
 			status = 'streaming';
 		}, SUBMITTING_TIMEOUT);
 
-		// Generate intelligent responses based on message content
-		setTimeout(() => {
+		// Call AI API for conversational response
+		try {
+			// Prepare event context
+			const eventContext = {
+				eventId: data.event._id,
+				eventName: data.event.name,
+				organizerName: data.event.organizerId?.name || 'Event Organizer',
+				startTime: new Date(data.event.bounds.start).toLocaleString(),
+				endTime: new Date(data.event.bounds.end).toLocaleString(),
+				isOrganizer: data.authStatus.user?.email === data.event.organizerId?.email
+			};
+
+			const response = await fetch('/api/chat', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					messages: conversationHistory,
+					eventContext
+				})
+			});
+
+			if (!response.ok) {
+				throw new Error('Failed to get AI response');
+			}
+
+			// Handle streaming response
+			const reader = response.body?.getReader();
+			const decoder = new TextDecoder();
+			let assistantMessage = '';
+			const assistantKey = `assistant-${Date.now()}`;
+
+			if (reader) {
+				// Add empty assistant message that will be updated
+				visibleMessages = [
+					...visibleMessages,
+					{
+						key: assistantKey,
+						value: '',
+						name: 'Assistant',
+						avatar: undefined
+					}
+				];
+
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+
+					const chunk = decoder.decode(value, { stream: true });
+					assistantMessage += chunk;
+					
+					// Update the assistant message in place
+					visibleMessages = visibleMessages.map(msg =>
+						msg.key === assistantKey
+							? { ...msg, value: assistantMessage }
+							: msg
+					);
+				}
+
+				// Add final message to conversation history
+				conversationHistory = [
+					...conversationHistory,
+					{ role: 'assistant', content: assistantMessage }
+				];
+			}
+
+			status = 'idle';
+			text = '';
+		} catch (error) {
+			console.error('AI Chat error:', error);
 			status = 'idle';
 			text = '';
 
-			let responseText = `Thanks for your message! I'll help you plan "${data.event.name}". What would you like to discuss about the event?`;
-
-			// Smart keyword-based responses
-			if (message.text) {
-				const text = message.text.toLowerCase();
-
-				if (text.includes('time') || text.includes('when') || text.includes('schedule')) {
-					if (freeTimeSlots.length > 0) {
-						responseText =
-							'I can see your free time slots above. Which of those times work best for you? I can help coordinate with other attendees once you let me know your preferences!';
-					} else {
-						responseText =
-							"Let me check your calendar for available times. Click the 'Check Free Times' button above, or tell me what times typically work best for you!";
-					}
-				} else if (
-					text.includes('prefer') ||
-					text.includes('like') ||
-					text.includes('good') ||
-					text.includes('work')
-				) {
-					responseText =
-						"Great! Let me know your preferred times and I'll help make this event happen. If you haven't seen your free time slots yet, I can analyze your calendar to suggest the best options.";
-				} else if (text.includes('first') || text.includes('1') || text.includes('option 1')) {
-					if (freeTimeSlots.length > 0) {
-						const firstSlot = freeTimeSlots[0];
-						const timeStr = firstSlot.start.toLocaleDateString('en-US', {
-							weekday: 'long',
-							month: 'short',
-							day: 'numeric',
-							hour: 'numeric',
-							minute: '2-digit',
-							hour12: true
-						});
-						responseText = `Perfect! You've chosen the first time slot: ${timeStr}. That looks like a great time for the event. I'll make note of your preference!`;
-					} else {
-						responseText =
-							"I'd love to help you with the first option, but I need to see your available times first. Try clicking 'Check Free Times' above!";
-					}
-				} else if (text.includes('second') || text.includes('2') || text.includes('option 2')) {
-					if (freeTimeSlots.length > 1) {
-						const secondSlot = freeTimeSlots[1];
-						const timeStr = secondSlot.start.toLocaleDateString('en-US', {
-							weekday: 'long',
-							month: 'short',
-							day: 'numeric',
-							hour: 'numeric',
-							minute: '2-digit',
-							hour12: true
-						});
-						responseText = `Excellent choice! You've selected the second time slot: ${timeStr}. That's a solid option for the event. I've noted your preference!`;
-					} else {
-						responseText =
-							"I'd like to help with the second option, but I need to check your calendar first. Click 'Check Free Times' to see all available slots!";
-					}
-				} else if (text.includes('third') || text.includes('3') || text.includes('option 3')) {
-					if (freeTimeSlots.length > 2) {
-						const thirdSlot = freeTimeSlots[2];
-						const timeStr = thirdSlot.start.toLocaleDateString('en-US', {
-							weekday: 'long',
-							month: 'short',
-							day: 'numeric',
-							hour: 'numeric',
-							minute: '2-digit',
-							hour12: true
-						});
-						responseText = `Great selection! You've picked the third time slot: ${timeStr}. That works well for the event. Your preference has been recorded!`;
-					} else {
-						responseText =
-							"I'd love to discuss the third option, but let me analyze your calendar first. Use the 'Check Free Times' button to see what's available!";
-					}
-				} else if (text.includes('hello') || text.includes('hi') || text.includes('hey')) {
-					responseText = `Hello! I'm here to help you plan "${data.event.name}". I can analyze your calendar to find the best times that work for you. Would you like me to check your free time slots?`;
-				} else if (text.includes('help')) {
-					responseText = `I'm here to help you plan this event! I can:\n\n• Analyze your calendar for free time slots\n• Help you choose the best times\n• Coordinate with other attendees\n• Answer questions about the event\n\nWhat would you like to do first?`;
-				}
-			}
+			// Fallback response if AI fails
+			const responseText = `I'm having trouble connecting to my AI service right now. I'll help you plan "${data.event.name}" the best I can! Click "Check Free Times" above to see your available time slots, or let me know what you'd like to discuss about the event.`;
 
 			visibleMessages = [
 				...visibleMessages,
@@ -306,7 +359,7 @@
 
 			// Update conversation history
 			conversationHistory = [...conversationHistory, { role: 'assistant', content: responseText }];
-		}, STREAMING_TIMEOUT);
+		}
 	};
 	function generateDynamicCallbackURL(): string {
 		// Example logic to generate a dynamic URL
@@ -1316,7 +1369,7 @@
 							<Button class="flex-1" size="sm" variant="outline" onclick={clearTimeSlotSelection}>
 								Clear Selection
 							</Button>
-							<Button class="flex-1" size="sm">
+							<Button class="flex-1" size="sm" onclick={confirmPreferredTime}>
 								Confirm Preferred Time
 							</Button>
 						</div>
