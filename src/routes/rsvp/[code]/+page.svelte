@@ -98,6 +98,11 @@
 		title: string;
 	} | null>(null);
 
+	// Function to clear time slot selection
+	function clearTimeSlotSelection() {
+		selectedTimeSlot = null;
+	}
+
 	// Chat input state
 	let models = [
 		{ id: 'gpt-4', name: 'GPT-4' },
@@ -491,7 +496,7 @@
 		});
 
 		message +=
-			'\nWould you like to mark any of these as your preferred times for the event? Just let me know which ones work best for you! 🗓️';
+			'\nWould you like to mark any of these as your preferred times for the event? Just let me know which ones work best for you!';
 
 		return message;
 	}
@@ -531,48 +536,15 @@
 			classNames: ['out-of-bounds']
 		});
 
-		// Add free time slots as green clickable events
-		freeTimeSlots.forEach((slot, index) => {
-			events.push({
-				id: `free-${index}`,
-				start: slot.start.toISOString(),
-				end: slot.end.toISOString(),
-				title: `✅ Available (${slot.duration} min)`,
-				backgroundColor: '#22c55e', // green-500 (more vibrant)
-				borderColor: '#16a34a', // green-600
-				textColor: '#ffffff',
-				classNames: ['available-time'],
-				extendedProps: {
-					clickable: true,
-					slotData: slot
-				}
-			});
-		});
-
-		// Add partial availability slots as yellow background events
-		partialAvailabilitySlots.forEach((slot, index) => {
-			events.push({
-				id: `partial-${index}`,
-				start: slot.start.toISOString(),
-				end: slot.end.toISOString(),
-				title: `Partial Availability (${slot.duration} min)`,
-				display: 'background',
-				backgroundColor: '#fde047', // yellow-300
-				classNames: ['partial-availability']
-			});
-
-			// Add conflict details as regular events
-			slot.conflicts?.forEach((conflict, conflictIndex) => {
-				events.push({
-					id: `conflict-${index}-${conflictIndex}`,
-					start: conflict.start.toISOString(),
-					end: conflict.end.toISOString(),
-					title: `Busy: ${conflict.conflictingParticipants.join(', ')}`,
-					backgroundColor: '#f97316', // orange-500
-					textColor: '#ffffff',
-					classNames: ['conflict-event']
-				});
-			});
+		// Add one green background bar for the entire event window
+		events.push({
+			id: 'event-window',
+			start: eventBounds.start.toISOString(),
+			end: eventBounds.end.toISOString(),
+			title: 'Event Time Window',
+			display: 'background',
+			backgroundColor: '#86efac', // green-300
+			classNames: ['event-window']
 		});
 
 		calendarEvents = events;
@@ -588,8 +560,9 @@
 			},
 			date: eventBounds.start,
 			events: calendarEvents,
-			editable: false,
-			selectable: false,
+			editable: true,
+			selectable: true,
+			selectMirror: true,
 			dayMaxEvents: false,
 			allDaySlot: false,
 			slotMinTime: '00:00:00',
@@ -599,88 +572,76 @@
 				hour: 'numeric' as const,
 				minute: '2-digit' as const
 			},
-		eventClick: (info: any) => {
-			console.log('🎯 CLICKED!', info.event);
+		select: (info: any) => {
+			console.log('SELECTED TIME RANGE:', info);
 			
-			// Handle clicks on availability slots
-			if (info.event.classNames.includes('available-time')) {
-				const startTime = new Date(info.event.start);
-				const endTime = new Date(info.event.end);
-				
-				// Format the date and time details
-				const dayOfWeek = startTime.toLocaleDateString('en-US', { weekday: 'long' });
-				const date = startTime.toLocaleDateString('en-US', { 
-					month: 'long', 
-					day: 'numeric', 
-					year: 'numeric' 
-				});
-				const startFormatted = startTime.toLocaleTimeString('en-US', { 
-					hour: 'numeric', 
-					minute: '2-digit',
-					hour12: true 
-				});
-				const endFormatted = endTime.toLocaleTimeString('en-US', { 
-					hour: 'numeric', 
-					minute: '2-digit',
-					hour12: true 
-				});
-				
-				// Calculate duration in minutes
-				const durationMinutes = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60));
-				const hours = Math.floor(durationMinutes / 60);
-				const minutes = durationMinutes % 60;
-				const durationText = hours > 0 
-					? `${hours} hour${hours !== 1 ? 's' : ''}${minutes > 0 ? ` ${minutes} minutes` : ''}`
-					: `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+			const startTime = new Date(info.start);
+			const endTime = new Date(info.end);
+			
+			// Format the date and time details
+			const dayOfWeek = startTime.toLocaleDateString('en-US', { weekday: 'long' });
+			const date = startTime.toLocaleDateString('en-US', { 
+				month: 'long', 
+				day: 'numeric', 
+				year: 'numeric' 
+			});
+			const startFormatted = startTime.toLocaleTimeString('en-US', { 
+				hour: 'numeric', 
+				minute: '2-digit',
+				hour12: true 
+			});
+			const endFormatted = endTime.toLocaleTimeString('en-US', { 
+				hour: 'numeric', 
+				minute: '2-digit',
+				hour12: true 
+			});
+			
+			// Calculate duration in minutes
+			const durationMinutes = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60));
+			const hours = Math.floor(durationMinutes / 60);
+			const minutes = durationMinutes % 60;
+			const durationText = hours > 0 
+				? `${hours} hour${hours !== 1 ? 's' : ''}${minutes > 0 ? ` ${minutes} minutes` : ''}`
+				: `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+			
+			console.log('Custom Time Selection:');
+			console.log('================================');
+			console.log('Day:', dayOfWeek);
+			console.log('Full Date:', date);
+			console.log('Start Time:', startFormatted, `(${startTime.toISOString()})`);
+			console.log('End Time:', endFormatted, `(${endTime.toISOString()})`);
+			console.log('Duration:', durationText, `(${durationMinutes} minutes)`);
+			console.log('================================');
+			
+			// Update selected time slot
+			selectedTimeSlot = {
+				dayOfWeek,
+				date,
+				startTime: startFormatted,
+				endTime: endFormatted,
+				startISO: startTime.toISOString(),
+				endISO: endTime.toISOString(),
+				duration: durationText,
+				durationMinutes,
+				eventId: 'custom-selection',
+				title: 'Custom Selection'
+			};
+			
+			const message = `**Custom Time Selected**\n\n` +
+				`**Date:** ${dayOfWeek}, ${date}\n` +
+				`**Time:** ${startFormatted} - ${endFormatted}\n` +
+				`**Duration:** ${durationText}\n\n` +
+				`You've selected a custom time range. Details are shown below the calendar.`;
 
-				// Log detailed info to console
-				console.log('🟢 Available Time Slot Clicked!');
-				console.log('================================');
-				console.log('📅 Event Details:', info.event);
-				console.log('📆 Day:', dayOfWeek);
-				console.log('📆 Full Date:', date);
-				console.log('🕐 Start Time:', startFormatted, `(${startTime.toISOString()})`);
-				console.log('🕐 End Time:', endFormatted, `(${endTime.toISOString()})`);
-				console.log('⏱️  Duration:', durationText, `(${durationMinutes} minutes)`);
-				console.log('🎨 Background Color:', info.event.backgroundColor);
-				console.log('🏷️  Event ID:', info.event.id);
-				console.log('🔖 Event Title:', info.event.title);
-				console.log('================================');
-				
-				// Create time slot object for easier access
-				const timeSlotInfo = {
-					dayOfWeek,
-					date,
-					startTime: startFormatted,
-					endTime: endFormatted,
-					startISO: startTime.toISOString(),
-					endISO: endTime.toISOString(),
-					duration: durationText,
-					durationMinutes,
-					eventId: info.event.id,
-					title: info.event.title
-				};
-				console.log('📦 Time Slot Object:', timeSlotInfo);
-				
-				// Set the selected time slot state to display in UI
-				selectedTimeSlot = timeSlotInfo;
-
-				const message = `📅 **Time Slot Details**\n\n` +
-					`📆 **Date:** ${dayOfWeek}, ${date}\n` +
-					`🕐 **Time:** ${startFormatted} - ${endFormatted}\n` +
-					`⏱️ **Duration:** ${durationText}\n\n` +
-					`This time slot is available for all participants! Would you like to select this time for the event?`;
-
-				visibleMessages = [
-					...visibleMessages,
-					{
-						key: `calendar-click-${Date.now()}`,
-						value: message,
-						name: 'Assistant',
-						avatar: undefined
-					}
-				];
-			}
+			visibleMessages = [
+				...visibleMessages,
+				{
+					key: `calendar-select-${Date.now()}`,
+					value: message,
+					name: 'Assistant',
+					avatar: undefined
+				}
+			];
 		}
 	};
 
@@ -1299,8 +1260,18 @@
 					<Calendar size={16} class="text-primary" />
 					Availability Calendar
 				</h3>
-				<div class="text-muted-foreground mt-1 text-xs">
-					🟢 Available • 🟡 Partial • 🟠 Conflicts • 🔴 Out of bounds
+				<div class="text-muted-foreground mt-1 flex items-center gap-3 text-xs">
+					<span class="flex items-center gap-1">
+						<span class="inline-block h-2 w-2 rounded-full bg-green-300"></span>
+						Event Time Window
+					</span>
+					<span class="flex items-center gap-1">
+						<span class="inline-block h-2 w-2 rounded-full bg-red-300"></span>
+						Out of bounds
+					</span>
+				</div>
+				<div class="text-muted-foreground mt-2 text-xs font-medium">
+					Click and drag on the green area to select your preferred time
 				</div>
 			</div>
 			<div class="flex-1 overflow-hidden p-2">
@@ -1341,14 +1312,19 @@
 								</div>
 							</div>
 						</div>
-						<Button class="mt-3 w-full" size="sm">
-							Confirm This Time Slot
-						</Button>
+						<div class="mt-3 flex gap-2">
+							<Button class="flex-1" size="sm" variant="outline" onclick={clearTimeSlotSelection}>
+								Clear Selection
+							</Button>
+							<Button class="flex-1" size="sm">
+								Confirm Preferred Time
+							</Button>
+						</div>
 					</div>
 				</div>
 			{:else}
 				<div class="border-border bg-muted/20 border-t p-4 text-center">
-					<p class="text-muted-foreground text-xs">Click on a green time slot to see details</p>
+					<p class="text-muted-foreground text-xs">Drag on the green area to select your preferred time</p>
 				</div>
 			{/if}
 		</div>
