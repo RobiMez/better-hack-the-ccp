@@ -77,6 +77,12 @@ const EventSchema = new Schema<IEvent>({
 		},
 		respondedByEmail: {
 			type: String
+		},
+		preferredTime: {
+			date: String,
+			time: String,
+			notes: String,
+			updatedAt: Date
 		}
 	}],
 	// Large event fields (optional)

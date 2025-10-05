@@ -48,6 +48,9 @@
 		Array<{ key: string; value: string; name: string; avatar?: string }>
 	>([]);
 
+	// Chat conversation history for AI
+	let conversationHistory = $state<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
+
 	// Chat input state
 	let models = [
 		{ id: 'gpt-4', name: 'GPT-4' },
@@ -62,7 +65,6 @@
 	];
 
 	let SUBMITTING_TIMEOUT = 200;
-	let STREAMING_TIMEOUT = 2000;
 
 	let text = $state<string>('');
 	let model = $state<string>(models[0].id);
@@ -93,9 +95,26 @@
 		} else {
 			console.log('⚠️ Client: User not authenticated from server');
 		}
+
+		// If user has already accepted, show chat interface
+		if (data.invite.status === 'accepted') {
+			showChat = true;
+			const welcomeMessage = `Welcome back! You've already accepted the invitation to "${data.event.name}". I'm here to help you find the perfect time for this event. What time works best for you?`;
+
+			visibleMessages = [
+				{
+					key: 'welcome',
+					value: welcomeMessage,
+					name: 'AI Assistant',
+					avatar: undefined
+				}
+			];
+
+			conversationHistory = [{ role: 'assistant', content: welcomeMessage }];
+		}
 	});
 
-	let handleSubmit = (message: PromptInputMessage) => {
+	async function handleSubmit(message: PromptInputMessage) {
 		let hasText = Boolean(message.text);
 		let hasAttachments = Boolean(message.files?.length);
 
@@ -103,44 +122,126 @@
 			return;
 		}
 
+		if (!hasText || !message.text) {
+			return;
+		}
+
+		const userMessage = message.text;
 		status = 'submitted';
 
 		// Add user message to chat
-		if (hasText && message.text) {
-			visibleMessages = [
-				...visibleMessages,
-				{
-					key: `user-${Date.now()}`,
-					value: message.text,
-					name: session?.data?.user?.name || session?.data?.user?.email || 'User',
-					avatar: undefined
-				}
-			];
-		}
+		visibleMessages = [
+			...visibleMessages,
+			{
+				key: `user-${Date.now()}`,
+				value: userMessage,
+				name: session?.data?.user?.name || session?.data?.user?.email || 'User',
+				avatar: undefined
+			}
+		];
 
-		console.log('Submitting message:', message);
+		// Add to conversation history
+		conversationHistory = [...conversationHistory, { role: 'user', content: userMessage }];
+
+		// Clear the input
+		text = '';
 
 		setTimeout(() => {
 			status = 'streaming';
 		}, SUBMITTING_TIMEOUT);
 
-		setTimeout(() => {
-			status = 'idle';
-			// Clear the input after successful submission
-			text = '';
+		try {
+			// Call the AI API
+			const response = await fetch('/api/chat-rsvp', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					messages: conversationHistory,
+					eventId: data.event._id,
+					inviteCode: data.inviteCode
+				})
+			});
 
-			// Add a mock response for demo purposes
+			if (!response.ok) {
+				throw new Error('Failed to get AI response');
+			}
+
+			// Stream the response
+			const reader = response.body?.getReader();
+			const decoder = new TextDecoder();
+
+			if (!reader) {
+				throw new Error('No response body');
+			}
+
+			let assistantMessage = '';
+			const assistantKey = `assistant-${Date.now()}`;
+
+			// Add placeholder for assistant message
 			visibleMessages = [
 				...visibleMessages,
 				{
-					key: `assistant-${Date.now()}`,
-					value: `Thanks for your message! I'll help you plan "${data.event.name}". What would you like to discuss about the event?`,
-					name: 'Assistant',
+					key: assistantKey,
+					value: '',
+					name: 'AI Assistant',
 					avatar: undefined
 				}
 			];
-		}, STREAMING_TIMEOUT);
-	};
+
+			let done = false;
+			while (!done) {
+				const { value, done: readerDone } = await reader.read();
+				done = readerDone;
+
+				if (value) {
+					const chunk = decoder.decode(value, { stream: true });
+					const lines = chunk.split('\n');
+
+					for (const line of lines) {
+						if (line.startsWith('0:')) {
+							// Text chunk
+							const textData = line.slice(2);
+							try {
+								assistantMessage += JSON.parse(textData);
+
+								// Update the assistant message in the UI
+								visibleMessages = visibleMessages.map((msg) =>
+									msg.key === assistantKey ? { ...msg, value: assistantMessage } : msg
+								);
+							} catch (e) {
+								// Ignore parsing errors
+							}
+						}
+					}
+				}
+			}
+
+			// Add complete assistant message to history
+			conversationHistory = [
+				...conversationHistory,
+				{ role: 'assistant', content: assistantMessage }
+			];
+
+			status = 'idle';
+		} catch (error) {
+			console.error('Chat error:', error);
+
+			// Add error message
+			visibleMessages = [
+				...visibleMessages,
+				{
+					key: `error-${Date.now()}`,
+					value: 'Sorry, I encountered an error. Please try again.',
+					name: 'AI Assistant',
+					avatar: undefined
+				}
+			];
+
+			status = 'idle';
+		}
+	}
 
 	async function handleGoogleSignIn() {
 		if (session?.data?.session) {
@@ -214,17 +315,22 @@
 				showChat = true;
 
 				// Add initial welcome message
+				const welcomeMessage =
+					response === 'accepted'
+						? `Great! You've accepted the invitation to "${data.event.name}". I'm here to help you find the perfect time for this event. What time works best for you?`
+						: `Thanks for letting us know you can't make it to "${data.event.name}". Is there anything you'd like to discuss about the event?`;
+
 				visibleMessages = [
 					{
 						key: 'welcome',
-						value:
-							response === 'accepted'
-								? `Great! You've accepted the invitation to "${data.event.name}". Let's start planning together!`
-								: `Thanks for letting us know you can't make it to "${data.event.name}". Is there anything you'd like to discuss about the event?`,
-						name: 'Assistant',
+						value: welcomeMessage,
+						name: 'AI Assistant',
 						avatar: undefined
 					}
 				];
+
+				// Add to conversation history
+				conversationHistory = [{ role: 'assistant', content: welcomeMessage }];
 			} else {
 				const error = await res.json();
 				alert('Error: ' + error.message);
@@ -470,16 +576,17 @@
 		</div>
 
 		<!-- Chat Interface - Shows after RSVP -->
-		<div class="bg-card border-border mt-6 overflow-hidden rounded-lg border shadow-lg">
-			<div class="bg-primary/5 border-border border-b p-4">
-				<h2 class="text-card-foreground flex items-center gap-2 text-lg font-semibold">
-					<ChatCircle size={20} class="text-primary" />
-					Event Planning Chat
-				</h2>
-				<p class="text-muted-foreground mt-1 text-sm">
-					Let's discuss the details for "{data.event.name}"
-				</p>
-			</div>
+		{#if showChat && data.invite.status === 'accepted'}
+			<div class="bg-card border-border mt-6 overflow-hidden rounded-lg border shadow-lg">
+				<div class="bg-primary/5 border-border border-b p-4">
+					<h2 class="text-card-foreground flex items-center gap-2 text-lg font-semibold">
+						<ChatCircle size={20} class="text-primary" />
+						Event Planning Chat
+					</h2>
+					<p class="text-muted-foreground mt-1 text-sm">
+						Let's discuss your preferred time for "{data.event.name}"
+					</p>
+				</div>
 
 			<div class="flex h-96 flex-col">
 				<div class="flex-1 overflow-hidden">
@@ -500,7 +607,7 @@
 										<div
 											class="bg-primary/10 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full"
 										>
-											{#if messageData.name === 'Assistant'}
+											{#if messageData.name === 'AI Assistant'}
 												<ChatCircle size={16} class="text-primary" />
 											{:else}
 												<User size={16} class="text-primary" />
@@ -554,5 +661,6 @@
 				</div>
 			</div>
 		</div>
+		{/if}
 	</div>
 </div>
