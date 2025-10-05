@@ -7,12 +7,14 @@ import './models/better-auth/user.model.js';
 import './models/better-auth/account.model.js';
 import './models/better-auth/session.model.js';
 import './models/event.model.js';
+import './models/time-slot-preference.model.js';
 
 // Re-export models for convenience
 export { User } from './models/better-auth/user.model.js';
 export { Account } from './models/better-auth/account.model.js';
 export { Session } from './models/better-auth/session.model.js';
 export { Event } from './models/event.model.js';
+export { TimeSlotPreference } from './models/time-slot-preference.model.js';
 
 // Initialize database connection and ensure models are registered
 export async function initializeModels() {
