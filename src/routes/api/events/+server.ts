@@ -5,10 +5,9 @@ import { EventType, EventStatus } from '$lib/models/event.model.types.js';
 import { connectDB } from '$lib/db.js';
 
 // GET - Fetch all events
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ url, locals }) => {
 	try {
 		await connectDB();
-		
 		const limit = parseInt(url.searchParams.get('limit') || '50');
 		const skip = parseInt(url.searchParams.get('skip') || '0');
 		const status = url.searchParams.get('status');

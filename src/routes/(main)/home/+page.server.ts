@@ -1,40 +1,109 @@
 import { auth } from '$lib/auth';
 import type { PageServerLoad } from './$types';
 
+// Helper function to make Google API calls with automatic token refresh
+async function makeGoogleAPICall(url: string, options: RequestInit, userId: string, maxRetries = 1, request: Request): Promise<Response> {
+	let accessToken;
+	
+	// Get initial access token
+	try {
+		const tokenResponse = await auth.api.getAccessToken({
+			body: {
+				providerId: 'google',
+				userId: userId
+			},
+			headers: request.headers
+		});
+		accessToken = tokenResponse.accessToken;
+	} catch (error) {
+		console.error('Failed to get access token:', error);
+		throw new Error('Failed to get access token');
+	}
+
+	// Make the API call
+	const requestOptions = {
+		...options,
+		headers: {
+			...options.headers,
+			Authorization: `Bearer ${accessToken}`
+		}
+	};
+
+	let response = await fetch(url, requestOptions);
+
+	// If we get a 401, try to refresh the token and retry
+	if (response.status === 401 && maxRetries > 0) {
+		console.log('Got 401, attempting to refresh token...');
+		
+		try {
+			// Refresh the token
+			const refreshResponse = await auth.api.refreshToken({
+				body: {
+					providerId: 'google',
+					userId: userId
+				}
+			});
+			console.log(refreshResponse)
+
+			// Get the new access token
+			const newTokenResponse = await auth.api.getAccessToken({
+				body: {
+					providerId: 'google',
+					userId: userId
+				},
+				headers: request.headers
+			});
+
+			// Retry the API call with the new token
+			const retryOptions = {
+				...options,
+				headers: {
+					...options.headers,
+					Authorization: `Bearer ${newTokenResponse.accessToken}`
+				}
+			};
+
+			response = await fetch(url, retryOptions);
+			console.log('Token refreshed and API call retried');
+			
+		} catch (refreshError) {
+			console.error('Failed to refresh token:', refreshError);
+			// Return the original 401 response if refresh fails
+		}
+	}
+
+	return response;
+}
+
 export const load: PageServerLoad = async ({ locals, request }) => {
 	try {
 		// Get user and session data
 		const user = locals.user;
 		const session = locals.session;
-
-		// Get Google Calendar access token (this automatically handles refresh)
-		const response = await auth.api.getAccessToken({
-			body: {
-				providerId: 'google',
-				userId: user.id
-			}
-		});
-
-		const { accessToken } = response;
 		
 		// Set up time range for busy time query (next 7 days)
 		const calendarId = 'primary';
 		const timeMin = new Date().toISOString();
 		const timeMax = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days window
 
-		// Query Google Calendar API for busy times
-		const res = await fetch('https://www.googleapis.com/calendar/v3/freeBusy', {
-			method: 'POST',
-			headers: {
-				Authorization: `Bearer ${accessToken}`,
-				'Content-Type': 'application/json'
+		// Query Google Calendar API for busy times with automatic token refresh
+		const res = await makeGoogleAPICall(
+			'https://www.googleapis.com/calendar/v3/freeBusy',
+			{
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					timeMin,
+					timeMax,
+					items: [{ id: calendarId }]
+				})
 			},
-			body: JSON.stringify({
-				timeMin,
-				timeMax,
-				items: [{ id: calendarId }]
-			})
-		});
+			user.id,
+			1,
+			request
+		);
 
 		if (!res.ok) {
 			const text = await res.text();

@@ -69,14 +69,11 @@
 	{#if message}
 		<p>{message}</p>
 	{/if}
-	<div>
-		{JSON.stringify(session)}
-	</div>
-	<div class="border border-black whitespace-pre-line">
+
+	<div class="border border-black whitespace-pre-line text-xs p-2 rounded-md">
 		{JSON.stringify(accounts, null, 2)}
 	</div>
-	<div class="border border-black whitespace-pre-line">
+	<div class="border border-black whitespace-pre-line text-xs p-2 rounded-md">
 		{JSON.stringify(data, null, 2)}
 	</div>
-	<!-- <CalendarUi busyTimes={data.busyTimes} /> -->
 </div>
