@@ -6,23 +6,23 @@ import { Event } from '$lib/models';
 import { json, type RequestEvent } from '@sveltejs/kit';
 
 export const POST = async ({ request }: RequestEvent) => {
-	console.log('🤖 Chat API called');
+	console.log('Chat API called');
 	try {
 		await connectDB();
-		console.log('✅ DB connected');
+		console.log('DB connected');
 
 		const body = await request.json();
 		const { messages, eventId, inviteCode } = body;
-		console.log('📝 Request:', { messagesCount: messages?.length, eventId, inviteCode });
+		console.log('Request:', { messagesCount: messages?.length, eventId, inviteCode });
 
 		if (!eventId || !inviteCode) {
-			console.error('❌ Missing eventId or inviteCode');
+			console.error('Missing eventId or inviteCode');
 			return json({ error: 'Missing eventId or inviteCode' }, { status: 400 });
 		}
 
 		// Fetch the event from database
 		const event = await Event.findById(eventId).populate('organizer_id', 'name email');
-		console.log('📅 Event found:', event?.name);
+		console.log('Event found:', event?.name);
 
 		if (!event) {
 			return json({ error: 'Event not found' }, { status: 404 });
@@ -139,14 +139,14 @@ BE WARM AND CONVERSATIONAL.`;
 		// Check if API key is configured
 		const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
 		if (!apiKey) {
-			console.error('❌ GOOGLE_GENERATIVE_AI_API_KEY not configured');
+			console.error('GOOGLE_GENERATIVE_AI_API_KEY not configured');
 			return json({ 
 				error: 'AI chatbot not configured. Please set GOOGLE_GENERATIVE_AI_API_KEY in your .env file.' 
 			}, { status: 500 });
 		}
-		console.log('✅ API key found');
+		console.log('API key found');
 
-		console.log('🚀 Starting AI stream...');
+		console.log('Starting AI stream...');
 		console.log('Messages to send:', JSON.stringify(messages, null, 2));
 		
 		// Stream the AI response
@@ -161,11 +161,11 @@ BE WARM AND CONVERSATIONAL.`;
 			maxSteps: 5
 		});
 
-		console.log('✅ Stream created, getting full text with tool results');
+		console.log('Stream created, getting full text with tool results');
 		
 		// Get the full text (includes tool results)
 		const fullText = await result.text;
-		console.log('📤 Full response text:', fullText);
+		console.log('Full response text:', fullText);
 		
 		// Create streaming response
 		const encoder = new TextEncoder();
@@ -176,7 +176,7 @@ BE WARM AND CONVERSATIONAL.`;
 						// Stream the full text word by word for a nice effect
 						const words = fullText.split(' ');
 						for (const word of words) {
-							console.log('📤 Sending word:', word);
+							console.log('Sending word:', word);
 							const data = `0:${JSON.stringify(word + ' ')}\n`;
 							controller.enqueue(encoder.encode(data));
 							await new Promise(resolve => setTimeout(resolve, 30));
@@ -184,15 +184,15 @@ BE WARM AND CONVERSATIONAL.`;
 					} else {
 						// Fallback message
 						const fallback = "Got it! Your preference has been saved.";
-						console.log('📤 No text generated, sending fallback');
+						console.log('No text generated, sending fallback');
 						const data = `0:${JSON.stringify(fallback)}\n`;
 						controller.enqueue(encoder.encode(data));
 					}
 					
-					console.log('✅ Stream complete');
+					console.log('Stream complete');
 					controller.close();
 				} catch (error) {
-					console.error('❌ Stream error:', error);
+					console.error('Stream error:', error);
 					controller.error(error);
 				}
 			}
@@ -205,7 +205,7 @@ BE WARM AND CONVERSATIONAL.`;
 			}
 		});
 	} catch (error) {
-		console.error('❌ Chat API error:', error);
+		console.error('Chat API error:', error);
 		console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
 		return json({ 
 			error: 'Internal server error', 
