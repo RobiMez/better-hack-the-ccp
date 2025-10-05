@@ -14,6 +14,9 @@
 	let showDialog = $state(false);
 	let loading = $state(false);
 
+	// Calendar events state
+	let calendarEvents = $state(data.events || []);
+
 	// Form state for quick create
 	let formData = $state({
 		eventType: EventType.SMALL,
@@ -64,8 +67,27 @@
 			if (response.ok) {
 				showDialog = false;
 				resetForm();
-				// Refresh the page to show the new event
-				window.location.reload();
+				
+				// Add the new event to the calendar
+				const newEvent = result.event;
+				const calendarEvent = {
+					id: newEvent._id,
+					title: newEvent.name,
+					start: new Date(newEvent.bounds.start),
+					end: new Date(newEvent.bounds.end),
+					display: 'auto',
+					backgroundColor: '#99ccff',
+					textColor: '#003366',
+					editable: false,
+					extendedProps: {
+						type: 'user-event',
+						description: newEvent.description,
+						status: newEvent.status,
+						eventType: newEvent.eventType
+					}
+				};
+				
+				calendarEvents = [...calendarEvents, calendarEvent];
 			} else {
 				alert('Error creating event: ' + result.error);
 			}
@@ -82,7 +104,61 @@
 		showDialog = false;
 	}
 
-	let options = $state({
+	async function handleDeleteEvent(eventId: string) {
+		if (!confirm('Are you sure you want to delete this event?')) {
+			return;
+		}
+
+		try {
+			const response = await fetch(`/api/events/${eventId}`, {
+				method: 'DELETE'
+			});
+
+			if (response.ok) {
+				// Remove the deleted event from the calendar
+				calendarEvents = calendarEvents.filter((event: any) => event.id !== eventId);
+			} else {
+				const result = await response.json();
+				alert('Failed to delete event: ' + result.error);
+			}
+		} catch (error) {
+			console.error('Error deleting event:', error);
+			alert('Failed to delete event');
+		}
+	}
+
+	// Event handlers
+	function handleEventClick(info: any) {
+		console.log('Event clicked:', info.event);
+		const eventType = info.event.extendedProps?.type;
+
+		if (eventType === 'user-event') {
+			const eventId = info.event.id;
+			handleDeleteEvent(eventId);
+		} else {
+			alert(`Event: ${info.event.title}\nStart: ${info.event.start}\nEnd: ${info.event.end}`);
+		}
+	}
+
+	function handleDateClick(info: any) {
+		console.log('Date clicked:', info.date);
+	}
+
+	function handleSelect(info: any) {
+		console.log('Time range selected:', info);
+		// Pre-fill form with selected time range
+		formData.bounds.start = new Date(info.start).toISOString().slice(0, 16);
+		formData.bounds.end = new Date(info.end).toISOString().slice(0, 16);
+
+		// Open the create dialog
+		showDialog = true;
+	}
+
+	function handleEventMouseEnter(info: any) {
+		console.log('Event hover:', info.event);
+	}
+
+	let options = $derived({
 		view: 'timeGridWeek',
 		height: '80vh',
 		headerToolbar: {
@@ -90,29 +166,14 @@
 			center: 'title',
 			end: 'dayGridMonth,timeGridWeek,timeGridDay'
 		},
-		events: data.events || [],
+		events: calendarEvents,
 		editable: true,
 		selectable: true,
 		dayMaxEvents: true,
-		eventClick: (info: any) => {
-			console.log('Event clicked:', info.event);
-			alert(`Event: ${info.event.title}\nStart: ${info.event.start}\nEnd: ${info.event.end}`);
-		},
-		dateClick: (info: any) => {
-			console.log('Date clicked:', info.date);
-		},
-		select: (info: any) => {
-			console.log('Time range selected:', info);
-			// Pre-fill form with selected time range
-			formData.bounds.start = new Date(info.start).toISOString().slice(0, 16);
-			formData.bounds.end = new Date(info.end).toISOString().slice(0, 16);
-
-			// Open the create dialog
-			showDialog = true;
-		},
-		eventMouseEnter: (info: any) => {
-			console.log('Event hover:', info.event);
-		},
+		eventClick: handleEventClick,
+		dateClick: handleDateClick,
+		select: handleSelect,
+		eventMouseEnter: handleEventMouseEnter,
 		// Better styling - show full day to catch all events
 		slotMinTime: '00:00:00',
 		slotMaxTime: '24:00:00',

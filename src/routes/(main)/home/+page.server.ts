@@ -1,5 +1,7 @@
 import { auth } from '$lib/auth';
 import type { PageServerLoad } from './$types';
+import { connectDB } from '$lib/db';
+import { Event } from '$lib/models/event.model';
 
 // Helper function to make Google API calls with automatic token refresh
 async function makeGoogleAPICall(url: string, options: RequestInit, userId: string, maxRetries = 1, request: Request): Promise<Response> {
@@ -120,7 +122,7 @@ export const load: PageServerLoad = async ({ locals, request }) => {
 		const busyTimes = data.calendars[calendarId];
 
 		// Transform busy times into EventCalendar event format
-		const events = busyTimes.busy?.map((busyPeriod: any, index: number) => {
+		const busyEvents = busyTimes.busy?.map((busyPeriod: { start: string; end: string }, index: number) => {
 			// Parse the Google Calendar datetime strings properly
 			const startDate = new Date(busyPeriod.start);
 			const endDate = new Date(busyPeriod.end);
@@ -149,6 +151,34 @@ export const load: PageServerLoad = async ({ locals, request }) => {
 				}
 			};
 		}) || [];
+
+		// Fetch user's events from database
+		await connectDB();
+		const userEvents = await Event.find({ organizerId: user.id }).lean();
+
+		// Transform user events into EventCalendar format
+		const calendarEvents = userEvents.map((event) => {
+			const eventData = event as unknown as { _id: { toString: () => string }; name: string; bounds: { start: Date; end: Date }; description?: string; status: string; eventType: string };
+			return {
+				id: eventData._id.toString(),
+				title: eventData.name,
+				start: new Date(eventData.bounds.start),
+				end: new Date(eventData.bounds.end),
+				display: 'auto',
+				backgroundColor: '#99ccff',
+				textColor: '#003366',
+				editable: false,
+				extendedProps: {
+					type: 'user-event',
+					description: eventData.description,
+					status: eventData.status,
+					eventType: eventData.eventType
+				}
+			};
+		});
+
+		// Combine busy times and user events
+		const events = [...busyEvents, ...calendarEvents];
 
 		console.log('Transformed events:', events);
 
