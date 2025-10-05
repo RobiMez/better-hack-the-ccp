@@ -25,7 +25,14 @@ const options = {
 			clientId: process.env.GOOGLE_CLIENT_ID as string,
 			clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
 			accessType: 'offline',
-			prompt: 'select_account consent'
+			prompt: 'select_account consent',
+			scopes: [
+				'openid',
+				'email',
+				'profile',
+				'https://www.googleapis.com/auth/calendar.readonly',
+				'https://www.googleapis.com/auth/calendar.freebusy'
+			]
 		}
 	}
 } satisfies BetterAuthOptions;

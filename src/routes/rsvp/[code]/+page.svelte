@@ -165,11 +165,25 @@
 			});
 
 			if (!response.ok) {
-				throw new Error('Failed to get AI response');
+				const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+				console.error('API Error:', errorData);
+				throw new Error(errorData.error || 'Failed to get AI response');
 			}
 
+			console.log('Response status:', response.status);
+			console.log('Content-Type:', response.headers.get('content-type'));
+			
+			// Check if response body exists
+			if (!response.body) {
+				throw new Error('No response body received from API');
+			}
+			
+			// Log response size
+			const contentLength = response.headers.get('content-length');
+			console.log('Content-Length:', contentLength || 'unknown (streaming)');
+
 			// Stream the response
-			const reader = response.body?.getReader();
+			const reader = response.body.getReader();
 			const decoder = new TextDecoder();
 
 			if (!reader) {
@@ -191,49 +205,89 @@
 			];
 
 			let done = false;
+			let buffer = '';
+			let chunkCount = 0;
+			
 			while (!done) {
 				const { value, done: readerDone } = await reader.read();
 				done = readerDone;
+				
+				if (done) {
+					console.log(`Stream ended. Total chunks: ${chunkCount}, Final message length: ${assistantMessage.length}`);
+				}
 
 				if (value) {
-					const chunk = decoder.decode(value, { stream: true });
-					const lines = chunk.split('\n');
+					chunkCount++;
+					const chunk = decoder.decode(value, { stream: false });
+					buffer += chunk;
+					console.log(`Chunk ${chunkCount}:`, chunk);
+					
+					const lines = buffer.split('\n');
+					buffer = lines.pop() || ''; // Keep incomplete line
 
 					for (const line of lines) {
-						if (line.startsWith('0:')) {
-							// Text chunk
-							const textData = line.slice(2);
-							try {
-								assistantMessage += JSON.parse(textData);
-
-								// Update the assistant message in the UI
-								visibleMessages = visibleMessages.map((msg) =>
-									msg.key === assistantKey ? { ...msg, value: assistantMessage } : msg
-								);
-							} catch (e) {
-								// Ignore parsing errors
+						if (!line.trim()) continue;
+						
+						console.log('Processing line:', line);
+						try {
+							// Data stream format: "0:" for text, "2:" for tool calls, "e:" for errors
+							if (line.startsWith('0:')) {
+								const content = JSON.parse(line.slice(2));
+								console.log('Text delta:', content);
+								assistantMessage += content;
+							} else if (line.startsWith('2:')) {
+								const toolCall = JSON.parse(line.slice(2));
+								console.log('Tool call:', toolCall);
+							} else if (line.startsWith('e:')) {
+								const error = JSON.parse(line.slice(2));
+								console.error('Stream error:', error);
+							} else if (line.startsWith('d:')) {
+								console.log('Data annotation:', line.slice(2));
 							}
+
+							// Update UI with accumulated message
+							visibleMessages = visibleMessages.map((msg) =>
+								msg.key === assistantKey ? { ...msg, value: assistantMessage } : msg
+							);
+						} catch (e) {
+							console.error('Parse error:', e, 'Line:', line);
 						}
 					}
 				}
 			}
 
 			// Add complete assistant message to history
-			conversationHistory = [
-				...conversationHistory,
-				{ role: 'assistant', content: assistantMessage }
-			];
+			console.log('Final assistant message:', assistantMessage);
+			console.log('Message length:', assistantMessage.length);
+			
+			if (assistantMessage.trim()) {
+				conversationHistory = [
+					...conversationHistory,
+					{ role: 'assistant', content: assistantMessage }
+				];
+				console.log('Updated conversation history:', conversationHistory);
+			} else {
+				console.warn('Assistant message was empty! Keeping UI placeholder with error message.');
+				// Update the message to show an error instead of removing it
+				visibleMessages = visibleMessages.map((msg) =>
+					msg.key === assistantKey 
+						? { ...msg, value: 'Sorry, I received an empty response. Please try again.' }
+						: msg
+				);
+			}
 
 			status = 'idle';
 		} catch (error) {
 			console.error('Chat error:', error);
+			console.error('Error details:', error instanceof Error ? error.message : error);
 
-			// Add error message
+			// Update or add error message
+			const errorMsg = error instanceof Error ? error.message : 'Unknown error';
 			visibleMessages = [
 				...visibleMessages,
 				{
 					key: `error-${Date.now()}`,
-					value: 'Sorry, I encountered an error. Please try again.',
+					value: `Sorry, I encountered an error: ${errorMsg}. Please check the console for details.`,
 					name: 'AI Assistant',
 					avatar: undefined
 				}
@@ -272,7 +326,10 @@
 		try {
 			await authClient.linkSocial({
 				provider: 'google',
-				scopes: ['https://www.googleapis.com/auth/calendar.readonly'],
+				scopes: [
+					'https://www.googleapis.com/auth/calendar.readonly',
+					'https://www.googleapis.com/auth/calendar.freebusy'
+				],
 				callbackURL: window.location.href // Redirect back to this invite page
 			});
 		} catch (error) {

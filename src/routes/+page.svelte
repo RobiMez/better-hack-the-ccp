@@ -20,7 +20,10 @@
 		try {
 			const token = await authClient.linkSocial({
 				provider: 'google',
-				scopes: ['https://www.googleapis.com/auth/calendar.readonly']
+				scopes: [
+					'https://www.googleapis.com/auth/calendar.readonly',
+					'https://www.googleapis.com/auth/calendar.freebusy'
+				]
 			});
 			console.log(token);
 			message = '✅ Calendar access granted!';

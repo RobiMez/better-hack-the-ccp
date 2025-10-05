@@ -6,18 +6,23 @@ import { Event } from '$lib/models';
 import { json, type RequestEvent } from '@sveltejs/kit';
 
 export const POST = async ({ request }: RequestEvent) => {
+	console.log('🤖 Chat API called');
 	try {
 		await connectDB();
+		console.log('✅ DB connected');
 
 		const body = await request.json();
 		const { messages, eventId, inviteCode } = body;
+		console.log('📝 Request:', { messagesCount: messages?.length, eventId, inviteCode });
 
 		if (!eventId || !inviteCode) {
+			console.error('❌ Missing eventId or inviteCode');
 			return json({ error: 'Missing eventId or inviteCode' }, { status: 400 });
 		}
 
 		// Fetch the event from database
 		const event = await Event.findById(eventId).populate('organizer_id', 'name email');
+		console.log('📅 Event found:', event?.name);
 
 		if (!event) {
 			return json({ error: 'Event not found' }, { status: 404 });
@@ -62,9 +67,12 @@ export const POST = async ({ request }: RequestEvent) => {
 
 						await event.save();
 
+						const timeStr = args.preferredTime ? `${args.preferredDate} at ${args.preferredTime}` : args.preferredDate;
+						const notesStr = args.notes ? ` I've also noted: "${args.notes}"` : '';
+						
 						return {
 							success: true,
-							message: `Great! I've noted that you prefer ${args.preferredDate}${args.preferredTime ? ' at ' + args.preferredTime : ''}. ${args.notes ? 'Notes: ' + args.notes : ''}`,
+							message: `Perfect! I've registered your preferred time as ${timeStr}.${notesStr} We'll do our best to accommodate your schedule for "${event.name}". The organizer will be notified of your preference!`,
 							preferredTime: {
 								date: args.preferredDate,
 								time: args.preferredTime || 'flexible',
@@ -106,44 +114,103 @@ export const POST = async ({ request }: RequestEvent) => {
 		});
 
 		// Create system prompt with event context
-		const systemPrompt = `You are a friendly AI assistant helping ${invite.email} plan their attendance for the event "${event.name}".
+		const systemPrompt = `You are a helpful AI assistant for the event "${event.name}".
 
-Event Details:
-- Name: ${event.name}
-- Description: ${event.description || 'No description'}
-- Organizer: ${event.organizer_id?.name || 'Unknown'}
-- Current Time Window: ${new Date(event.bounds.start).toLocaleString()} to ${new Date(event.bounds.end).toLocaleString()}
+The user ${invite.email} has accepted the invitation. Your job:
 
-Your goal is to:
-1. Have a friendly conversation with the attendee
-2. Ask about their preferred time for the event
-3. Use the setPreferredTime tool to save their preference when they mention a specific time
-4. Answer any questions they have about the event
+1. **If they mention ANY time/date** → Call setPreferredTime tool to save it, THEN say a friendly goodbye
+2. **If NO time mentioned** → Ask when they prefer to attend
 
-Be conversational and helpful. When they mention a time preference, immediately use the setPreferredTime tool to save it.
+Event: ${event.name}
+Window: ${new Date(event.bounds.start).toLocaleDateString()} to ${new Date(event.bounds.end).toLocaleDateString()}
 
-Examples of when to use setPreferredTime:
-- User: "I prefer Tuesday afternoon" → Call tool with preferredDate: "Tuesday" and preferredTime: "afternoon"
-- User: "How about next Friday at 2pm?" → Call tool with preferredDate: "next Friday" and preferredTime: "2pm"
-- User: "I'm free anytime on March 15th" → Call tool with preferredDate: "March 15th" and preferredTime: "flexible"
+IMPORTANT: After calling setPreferredTime, ALWAYS add a brief farewell like:
+- "Looking forward to seeing you there!"
+- "Thanks for letting us know! See you at the event."
+- "Great! We'll be in touch soon."
 
-Remember: ${invite.email} has already accepted the invitation, so focus on helping them specify their preferred time.`;
+EXAMPLES:
+- "Tuesday 2pm" → Call setPreferredTime → "Looking forward to seeing you there!"
+- "next week" → Call setPreferredTime → "Thanks! We'll be in touch."
+- "hello" → "When would you prefer to attend ${event.name}?"
 
+BE WARM AND CONVERSATIONAL.`;
+
+		// Check if API key is configured
+		const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+		if (!apiKey) {
+			console.error('❌ GOOGLE_GENERATIVE_AI_API_KEY not configured');
+			return json({ 
+				error: 'AI chatbot not configured. Please set GOOGLE_GENERATIVE_AI_API_KEY in your .env file.' 
+			}, { status: 500 });
+		}
+		console.log('✅ API key found');
+
+		console.log('🚀 Starting AI stream...');
+		console.log('Messages to send:', JSON.stringify(messages, null, 2));
+		
 		// Stream the AI response
-		const result = streamText({
-			model: google('gemini-2.0-flash-exp'),
+		const result = await streamText({
+			model: google('gemini-2.5-flash'),
 			system: systemPrompt,
 			messages,
 			tools: {
 				setPreferredTime: setPreferredTimeTool,
 				getEventDetails: getEventDetailsTool
+			},
+			maxSteps: 5
+		});
+
+		console.log('✅ Stream created, getting full text with tool results');
+		
+		// Get the full text (includes tool results)
+		const fullText = await result.text;
+		console.log('📤 Full response text:', fullText);
+		
+		// Create streaming response
+		const encoder = new TextEncoder();
+		const stream = new ReadableStream({
+			async start(controller) {
+				try {
+					if (fullText && fullText.trim()) {
+						// Stream the full text word by word for a nice effect
+						const words = fullText.split(' ');
+						for (const word of words) {
+							console.log('📤 Sending word:', word);
+							const data = `0:${JSON.stringify(word + ' ')}\n`;
+							controller.enqueue(encoder.encode(data));
+							await new Promise(resolve => setTimeout(resolve, 30));
+						}
+					} else {
+						// Fallback message
+						const fallback = "Got it! Your preference has been saved.";
+						console.log('📤 No text generated, sending fallback');
+						const data = `0:${JSON.stringify(fallback)}\n`;
+						controller.enqueue(encoder.encode(data));
+					}
+					
+					console.log('✅ Stream complete');
+					controller.close();
+				} catch (error) {
+					console.error('❌ Stream error:', error);
+					controller.error(error);
+				}
 			}
 		});
 
-		return result.toTextStreamResponse();
+		return new Response(stream, {
+			headers: {
+				'Content-Type': 'text/plain; charset=utf-8',
+				'Transfer-Encoding': 'chunked'
+			}
+		});
 	} catch (error) {
-		console.error('Chat API error:', error);
-		return json({ error: 'Internal server error' }, { status: 500 });
+		console.error('❌ Chat API error:', error);
+		console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+		return json({ 
+			error: 'Internal server error', 
+			details: error instanceof Error ? error.message : String(error)
+		}, { status: 500 });
 	}
 };
 
