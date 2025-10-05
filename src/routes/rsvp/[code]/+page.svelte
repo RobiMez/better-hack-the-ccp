@@ -85,6 +85,18 @@
 	let showCalendarVisualization = $state(false);
 	let calendarEvents = $state<Array<any>>([]);
 	let calendarOptions = $state<any>(null);
+	let selectedTimeSlot = $state<{
+		dayOfWeek: string;
+		date: string;
+		startTime: string;
+		endTime: string;
+		startISO: string;
+		endISO: string;
+		duration: string;
+		durationMinutes: number;
+		eventId: string;
+		title: string;
+	} | null>(null);
 
 	// Chat input state
 	let models = [
@@ -519,16 +531,21 @@
 			classNames: ['out-of-bounds']
 		});
 
-		// Add free time slots as green background events
+		// Add free time slots as green clickable events
 		freeTimeSlots.forEach((slot, index) => {
 			events.push({
 				id: `free-${index}`,
 				start: slot.start.toISOString(),
 				end: slot.end.toISOString(),
-				title: `Available (${slot.duration} min)`,
-				display: 'background',
-				backgroundColor: '#86efac', // green-300
-				classNames: ['available-time']
+				title: `✅ Available (${slot.duration} min)`,
+				backgroundColor: '#22c55e', // green-500 (more vibrant)
+				borderColor: '#16a34a', // green-600
+				textColor: '#ffffff',
+				classNames: ['available-time'],
+				extendedProps: {
+					clickable: true,
+					slotData: slot
+				}
 			});
 		});
 
@@ -582,25 +599,92 @@
 				hour: 'numeric' as const,
 				minute: '2-digit' as const
 			},
-			eventClick: (info: any) => {
-				// Handle clicks on availability slots
-				if (info.event.classNames.includes('available-time')) {
-					const message = `You clicked on an available time slot: ${info.event.title}. Would you like to select this time for the event?`;
+		eventClick: (info: any) => {
+			console.log('🎯 CLICKED!', info.event);
+			
+			// Handle clicks on availability slots
+			if (info.event.classNames.includes('available-time')) {
+				const startTime = new Date(info.event.start);
+				const endTime = new Date(info.event.end);
+				
+				// Format the date and time details
+				const dayOfWeek = startTime.toLocaleDateString('en-US', { weekday: 'long' });
+				const date = startTime.toLocaleDateString('en-US', { 
+					month: 'long', 
+					day: 'numeric', 
+					year: 'numeric' 
+				});
+				const startFormatted = startTime.toLocaleTimeString('en-US', { 
+					hour: 'numeric', 
+					minute: '2-digit',
+					hour12: true 
+				});
+				const endFormatted = endTime.toLocaleTimeString('en-US', { 
+					hour: 'numeric', 
+					minute: '2-digit',
+					hour12: true 
+				});
+				
+				// Calculate duration in minutes
+				const durationMinutes = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60));
+				const hours = Math.floor(durationMinutes / 60);
+				const minutes = durationMinutes % 60;
+				const durationText = hours > 0 
+					? `${hours} hour${hours !== 1 ? 's' : ''}${minutes > 0 ? ` ${minutes} minutes` : ''}`
+					: `${minutes} minute${minutes !== 1 ? 's' : ''}`;
 
-					visibleMessages = [
-						...visibleMessages,
-						{
-							key: `calendar-click-${Date.now()}`,
-							value: message,
-							name: 'Assistant',
-							avatar: undefined
-						}
-					];
-				}
+				// Log detailed info to console
+				console.log('🟢 Available Time Slot Clicked!');
+				console.log('================================');
+				console.log('📅 Event Details:', info.event);
+				console.log('📆 Day:', dayOfWeek);
+				console.log('📆 Full Date:', date);
+				console.log('🕐 Start Time:', startFormatted, `(${startTime.toISOString()})`);
+				console.log('🕐 End Time:', endFormatted, `(${endTime.toISOString()})`);
+				console.log('⏱️  Duration:', durationText, `(${durationMinutes} minutes)`);
+				console.log('🎨 Background Color:', info.event.backgroundColor);
+				console.log('🏷️  Event ID:', info.event.id);
+				console.log('🔖 Event Title:', info.event.title);
+				console.log('================================');
+				
+				// Create time slot object for easier access
+				const timeSlotInfo = {
+					dayOfWeek,
+					date,
+					startTime: startFormatted,
+					endTime: endFormatted,
+					startISO: startTime.toISOString(),
+					endISO: endTime.toISOString(),
+					duration: durationText,
+					durationMinutes,
+					eventId: info.event.id,
+					title: info.event.title
+				};
+				console.log('📦 Time Slot Object:', timeSlotInfo);
+				
+				// Set the selected time slot state to display in UI
+				selectedTimeSlot = timeSlotInfo;
+
+				const message = `📅 **Time Slot Details**\n\n` +
+					`📆 **Date:** ${dayOfWeek}, ${date}\n` +
+					`🕐 **Time:** ${startFormatted} - ${endFormatted}\n` +
+					`⏱️ **Duration:** ${durationText}\n\n` +
+					`This time slot is available for all participants! Would you like to select this time for the event?`;
+
+				visibleMessages = [
+					...visibleMessages,
+					{
+						key: `calendar-click-${Date.now()}`,
+						value: message,
+						name: 'Assistant',
+						avatar: undefined
+					}
+				];
 			}
-		};
+		}
+	};
 
-		showCalendarVisualization = true;
+	showCalendarVisualization = true;
 	}
 
 	function generateMultiUserFreeTimeMessage(
@@ -1222,6 +1306,51 @@
 			<div class="flex-1 overflow-hidden p-2">
 				<EventCalendar plugins={[TimeGrid, Interaction]} options={calendarOptions} />
 			</div>
+			
+			<!-- Selected Time Slot Details Panel -->
+			{#if selectedTimeSlot}
+				<div class="border-border bg-card border-t p-4">
+					<h4 class="text-card-foreground mb-3 text-sm font-semibold">Selected Time Slot</h4>
+					<div class="space-y-2 text-sm">
+						<div class="flex items-start justify-between">
+							<span class="text-muted-foreground">Day:</span>
+							<span class="text-card-foreground font-medium">{selectedTimeSlot.dayOfWeek}</span>
+						</div>
+						<div class="flex items-start justify-between">
+							<span class="text-muted-foreground">Date:</span>
+							<span class="text-card-foreground font-medium">{selectedTimeSlot.date}</span>
+						</div>
+						<div class="flex items-start justify-between">
+							<span class="text-muted-foreground">Time:</span>
+							<span class="text-card-foreground font-medium">{selectedTimeSlot.startTime} - {selectedTimeSlot.endTime}</span>
+						</div>
+						<div class="flex items-start justify-between">
+							<span class="text-muted-foreground">Duration:</span>
+							<span class="text-card-foreground font-medium">{selectedTimeSlot.duration}</span>
+						</div>
+						<div class="border-border mt-3 border-t pt-3">
+							<div class="text-muted-foreground mb-1 text-xs">ISO Timestamps:</div>
+							<div class="bg-muted rounded p-2 text-xs">
+								<div class="mb-1">
+									<span class="text-muted-foreground">Start:</span>
+									<code class="text-foreground ml-1">{selectedTimeSlot.startISO}</code>
+								</div>
+								<div>
+									<span class="text-muted-foreground">End:</span>
+									<code class="text-foreground ml-1">{selectedTimeSlot.endISO}</code>
+								</div>
+							</div>
+						</div>
+						<Button class="mt-3 w-full" size="sm">
+							Confirm This Time Slot
+						</Button>
+					</div>
+				</div>
+			{:else}
+				<div class="border-border bg-muted/20 border-t p-4 text-center">
+					<p class="text-muted-foreground text-xs">Click on a green time slot to see details</p>
+				</div>
+			{/if}
 		</div>
 	{:else}
 		<div class="flex flex-1 items-center justify-center">loading calendar</div>
