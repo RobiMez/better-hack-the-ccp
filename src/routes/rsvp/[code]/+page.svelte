@@ -147,7 +147,7 @@
 			// clearTimeSlotSelection();
 		} catch (error) {
 			console.error('Error saving time slot preference:', error);
-			
+
 			// Add error message to chat
 			visibleMessages = [
 				...visibleMessages,
@@ -321,12 +321,10 @@
 
 					const chunk = decoder.decode(value, { stream: true });
 					assistantMessage += chunk;
-					
+
 					// Update the assistant message in place
-					visibleMessages = visibleMessages.map(msg =>
-						msg.key === assistantKey
-							? { ...msg, value: assistantMessage }
-							: msg
+					visibleMessages = visibleMessages.map((msg) =>
+						msg.key === assistantKey ? { ...msg, value: assistantMessage } : msg
 					);
 				}
 
@@ -625,80 +623,82 @@
 				hour: 'numeric' as const,
 				minute: '2-digit' as const
 			},
-		select: (info: any) => {
-			console.log('SELECTED TIME RANGE:', info);
-			
-			const startTime = new Date(info.start);
-			const endTime = new Date(info.end);
-			
-			// Format the date and time details
-			const dayOfWeek = startTime.toLocaleDateString('en-US', { weekday: 'long' });
-			const date = startTime.toLocaleDateString('en-US', { 
-				month: 'long', 
-				day: 'numeric', 
-				year: 'numeric' 
-			});
-			const startFormatted = startTime.toLocaleTimeString('en-US', { 
-				hour: 'numeric', 
-				minute: '2-digit',
-				hour12: true 
-			});
-			const endFormatted = endTime.toLocaleTimeString('en-US', { 
-				hour: 'numeric', 
-				minute: '2-digit',
-				hour12: true 
-			});
-			
-			// Calculate duration in minutes
-			const durationMinutes = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60));
-			const hours = Math.floor(durationMinutes / 60);
-			const minutes = durationMinutes % 60;
-			const durationText = hours > 0 
-				? `${hours} hour${hours !== 1 ? 's' : ''}${minutes > 0 ? ` ${minutes} minutes` : ''}`
-				: `${minutes} minute${minutes !== 1 ? 's' : ''}`;
-			
-			console.log('Custom Time Selection:');
-			console.log('================================');
-			console.log('Day:', dayOfWeek);
-			console.log('Full Date:', date);
-			console.log('Start Time:', startFormatted, `(${startTime.toISOString()})`);
-			console.log('End Time:', endFormatted, `(${endTime.toISOString()})`);
-			console.log('Duration:', durationText, `(${durationMinutes} minutes)`);
-			console.log('================================');
-			
-			// Update selected time slot
-			selectedTimeSlot = {
-				dayOfWeek,
-				date,
-				startTime: startFormatted,
-				endTime: endFormatted,
-				startISO: startTime.toISOString(),
-				endISO: endTime.toISOString(),
-				duration: durationText,
-				durationMinutes,
-				eventId: 'custom-selection',
-				title: 'Custom Selection'
-			};
-			
-			const message = `**Custom Time Selected**\n\n` +
-				`**Date:** ${dayOfWeek}, ${date}\n` +
-				`**Time:** ${startFormatted} - ${endFormatted}\n` +
-				`**Duration:** ${durationText}\n\n` +
-				`You've selected a custom time range. Details are shown below the calendar.`;
+			select: (info: any) => {
+				console.log('SELECTED TIME RANGE:', info);
 
-			visibleMessages = [
-				...visibleMessages,
-				{
-					key: `calendar-select-${Date.now()}`,
-					value: message,
-					name: 'Assistant',
-					avatar: undefined
-				}
-			];
-		}
-	};
+				const startTime = new Date(info.start);
+				const endTime = new Date(info.end);
 
-	showCalendarVisualization = true;
+				// Format the date and time details
+				const dayOfWeek = startTime.toLocaleDateString('en-US', { weekday: 'long' });
+				const date = startTime.toLocaleDateString('en-US', {
+					month: 'long',
+					day: 'numeric',
+					year: 'numeric'
+				});
+				const startFormatted = startTime.toLocaleTimeString('en-US', {
+					hour: 'numeric',
+					minute: '2-digit',
+					hour12: true
+				});
+				const endFormatted = endTime.toLocaleTimeString('en-US', {
+					hour: 'numeric',
+					minute: '2-digit',
+					hour12: true
+				});
+
+				// Calculate duration in minutes
+				const durationMinutes = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60));
+				const hours = Math.floor(durationMinutes / 60);
+				const minutes = durationMinutes % 60;
+				const durationText =
+					hours > 0
+						? `${hours} hour${hours !== 1 ? 's' : ''}${minutes > 0 ? ` ${minutes} minutes` : ''}`
+						: `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+
+				console.log('Custom Time Selection:');
+				console.log('================================');
+				console.log('Day:', dayOfWeek);
+				console.log('Full Date:', date);
+				console.log('Start Time:', startFormatted, `(${startTime.toISOString()})`);
+				console.log('End Time:', endFormatted, `(${endTime.toISOString()})`);
+				console.log('Duration:', durationText, `(${durationMinutes} minutes)`);
+				console.log('================================');
+
+				// Update selected time slot
+				selectedTimeSlot = {
+					dayOfWeek,
+					date,
+					startTime: startFormatted,
+					endTime: endFormatted,
+					startISO: startTime.toISOString(),
+					endISO: endTime.toISOString(),
+					duration: durationText,
+					durationMinutes,
+					eventId: 'custom-selection',
+					title: 'Custom Selection'
+				};
+
+				const message =
+					`**Custom Time Selected**\n\n` +
+					`**Date:** ${dayOfWeek}, ${date}\n` +
+					`**Time:** ${startFormatted} - ${endFormatted}\n` +
+					`**Duration:** ${durationText}\n\n` +
+					`You've selected a custom time range. Details are shown below the calendar.`;
+
+				visibleMessages = [
+					...visibleMessages,
+					{
+						key: `calendar-select-${Date.now()}`,
+						value: message,
+						name: 'Assistant',
+						avatar: undefined
+					}
+				];
+			}
+		};
+
+		showCalendarVisualization = true;
 	}
 
 	function generateMultiUserFreeTimeMessage(
@@ -938,7 +938,7 @@
 </svelte:head>
 
 <div class="bg-background maxw-4xl container mx-auto flex min-h-screen flex-row gap-4 px-4 py-8">
-	<div class="w-4/12">
+	<div class="w-5/12">
 		<div id="event-card" class="bg-card border-border overflow-hidden rounded-lg border shadow-lg">
 			<!-- Header -->
 			<div class="bg-primary/5 border-border border-b p-6">
@@ -958,7 +958,6 @@
 							onclick={toggleEventCard}
 							class="flex items-center gap-2"
 						>
-							{isEventCardCollapsed ? 'Show Details' : 'Hide Details'}
 							{#if isEventCardCollapsed}
 								<CaretDown size={16} />
 							{:else}
@@ -975,9 +974,6 @@
 							<Calendar size={16} class="text-primary" />
 							<span class="font-medium">{data.event.name}</span>
 							<span class="text-muted-foreground">•</span>
-							<span>{formatDate(data.event.bounds.start)}</span>
-						</div>
-						<div class="flex items-center gap-2 text-sm">
 							<span class="font-medium {getStatusColor(data.invite.status)}">
 								{getStatusText(data.invite.status)}
 							</span>
@@ -1192,7 +1188,7 @@
 					</h2>
 					<div class="flex items-center justify-between">
 						<p class="text-muted-foreground mt-1 text-sm">
-							Let's discuss the details for "{data.event.name}"
+							Let's discuss "{data.event.name.trim()}"
 						</p>
 
 						<!-- Manual calendar analysis trigger -->
@@ -1330,7 +1326,7 @@
 			<div class="flex-1 overflow-hidden p-2">
 				<EventCalendar plugins={[TimeGrid, Interaction]} options={calendarOptions} />
 			</div>
-			
+
 			<!-- Selected Time Slot Details Panel -->
 			{#if selectedTimeSlot}
 				<div class="border-border bg-card border-t p-4">
@@ -1346,7 +1342,9 @@
 						</div>
 						<div class="flex items-start justify-between">
 							<span class="text-muted-foreground">Time:</span>
-							<span class="text-card-foreground font-medium">{selectedTimeSlot.startTime} - {selectedTimeSlot.endTime}</span>
+							<span class="text-card-foreground font-medium"
+								>{selectedTimeSlot.startTime} - {selectedTimeSlot.endTime}</span
+							>
 						</div>
 						<div class="flex items-start justify-between">
 							<span class="text-muted-foreground">Duration:</span>
@@ -1377,7 +1375,9 @@
 				</div>
 			{:else}
 				<div class="border-border bg-muted/20 border-t p-4 text-center">
-					<p class="text-muted-foreground text-xs">Drag on the green area to select your preferred time</p>
+					<p class="text-muted-foreground text-xs">
+						Drag on the green area to select your preferred time
+					</p>
 				</div>
 			{/if}
 		</div>

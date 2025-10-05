@@ -1,79 +1,73 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
-	import { ArrowSquareOut, House, HouseSimple } from 'phosphor-svelte';
+	import { ArrowRight } from 'phosphor-svelte';
 
-	import { authClient } from '$lib/auth-client'; // your Better Auth instance
-	import { onMount } from 'svelte';
-	import CalendarUi from './calendar-ui.svelte';
+	const chars = '01!@#$%^&*()_+-=[]{}|;:,.<>?/~`абвгдежзийклмнопрстуфхцчшщъыьэюя';
+	const rows = 100;
+	const cols = 300;
 
-	let { data } = $props();
+	let isHovered = $state(false);
+	let hasSetX = $state(false);
 
-	let loading = $state(false);
-	let message = $state('');
-	let session = $state();
-	let accounts = $state();
+	let grid = $state(
+		Array.from({ length: rows }, () =>
+			Array.from({ length: cols }, () => chars[Math.floor(Math.random() * chars.length)])
+		)
+	);
 
-	const requestCalendarAccess = async () => {
-		loading = true;
-		message = '';
-
-		try {
-			const token = await authClient.linkSocial({
-				provider: 'google',
-				scopes: ['https://www.googleapis.com/auth/calendar.readonly']
-			});
-			console.log(token);
-			message = '✅ Calendar access granted!';
-		} catch (err: any) {
-			console.error('Error requesting additional scope:', err);
-			message = '❌ Failed to request Calendar access';
-		} finally {
-			loading = false;
+	function randomizeGrid() {
+		if (isHovered) {
+			if (!hasSetX) {
+				grid = grid.map((row) => row.map((char) => (char === ' ' ? ' ' : '-')));
+				hasSetX = true;
+			}
+			// Don't update when hovered - frozen in place
+		} else {
+			hasSetX = false;
+			grid = grid.map((row) =>
+				row.map((char) => {
+					// Only change ~10% of characters each tick for smoother transition
+					if (Math.random() > 0.9) {
+						return Math.random() > 0.7 ? chars[Math.floor(Math.random() * chars.length)] : ' ';
+					}
+					return char;
+				})
+			);
 		}
-	};
+	}
 
-	onMount(async () => {
-		try {
-			session = await authClient.useSession();
-			console.log(session);
-		} catch (error) {
-			console.log(error);
-		}
-		try {
-			accounts = await authClient.listAccounts();
-			console.log(accounts);
-		} catch (error) {
-			console.log(error);
-		}
-	});
+	setInterval(randomizeGrid, 50);
 </script>
 
-<div class="flex h-screen w-screen flex-col items-center justify-center gap-4">
-	<h1 class="text-4xl font-light">Synk up</h1>
-	<p class="text-lgt-con-sec dark:text-drk-con-sec">Event orchestration</p>
-
-	<span class="flex flex-row gap-3">
-		<Button variant="outline" href="/home">
-			<House weight="duotone" />
-			Home
-		</Button>
-	</span>
-	<button onclick={requestCalendarAccess} disabled={loading}>
-		{#if loading}
-			Requesting access...
-		{:else}
-			Grant Google Calendar Access
-		{/if}
-	</button>
-
-	{#if message}
-		<p>{message}</p>
-	{/if}
-
-	<div class="border border-black whitespace-pre-line text-xs p-2 rounded-md">
-		{JSON.stringify(accounts, null, 2)}
+<div class="relative flex h-screen w-screen flex-col items-center justify-center overflow-hidden">
+	<!-- ASCII Noise Background -->
+	<div
+		class="pointer-events-none absolute inset-0 font-mono text-xs leading-tight transition-all duration-300 {isHovered
+			? 'text-primary/20'
+			: 'text-primary/60'}"
+		style="white-space: pre;"
+	>
+		{#each grid as row}
+			{row.join('')}{'\n'}
+		{/each}
 	</div>
-	<div class="border border-black whitespace-pre-line text-xs p-2 rounded-md">
-		{JSON.stringify(data, null, 2)}
+
+	<!-- Content -->
+	<div class="relative z-10 flex flex-col items-center gap-6">
+		<div class="flex flex-col items-center gap-4 p-12 bg-background/5 backdrop-blur-3xl border border-primary/20 ">
+			<h1 class="text-[94px] font-extralight tracking-tight">Synk up</h1>
+			<p class="text-muted-foreground text-lg">Show Up !</p>
+		</div>
+
+		<Button
+			href="/home"
+			size="lg"
+			class="group gap-2"
+			onmouseenter={() => (isHovered = true)}
+			onmouseleave={() => (isHovered = false)}
+		>
+			Get Started
+			<ArrowRight weight="bold" class="transition-transform group-hover:translate-x-1" />
+		</Button>
 	</div>
 </div>

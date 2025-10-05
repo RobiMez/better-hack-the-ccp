@@ -1,8 +1,8 @@
 <script lang="ts" module>
 	const data = {
 		user: {
-			name: 'shadcn',
-			email: 'm@example.com',
+			name: 'robi.work',
+			email: 'better-hack@robi.work',
 			avatar: '/android-chrome-192x192.png'
 		},
 		navMain: [
@@ -17,16 +17,6 @@
 				url: '/events',
 				icon: CalendarStar,
 				isActive: true
-			},
-			{
-				title: 'Votes',
-				url: '/votes',
-				icon: BoxArrowDown
-			},
-			{
-				title: 'Settings',
-				url: 'settings',
-				icon: GearSix
 			}
 		]
 	};
@@ -57,8 +47,8 @@
 								<CommandIcon class="size-4" />
 							</div>
 							<div class="grid flex-1 text-left text-sm leading-tight">
-								<span class="truncate font-medium">Acme Inc</span>
-								<span class="truncate text-xs">Enterprise</span>
+								<span class="truncate font-medium">Synk Up</span>
+								<span class="truncate text-xs">The CCP</span>
 							</div>
 						</a>
 					{/snippet}

@@ -50,7 +50,7 @@
 				...formData,
 				organizerId: data.user?._id || data.user?.id
 			};
-			
+
 			const response = await fetch('/api/events', {
 				method: 'POST',
 				headers: {
@@ -84,7 +84,7 @@
 
 	let options = $state({
 		view: 'timeGridWeek',
-		height: '600px',
+		height: '80vh',
 		headerToolbar: {
 			start: 'prev,next today',
 			center: 'title',
@@ -106,7 +106,7 @@
 			// Pre-fill form with selected time range
 			formData.bounds.start = new Date(info.start).toISOString().slice(0, 16);
 			formData.bounds.end = new Date(info.end).toISOString().slice(0, 16);
-			
+
 			// Open the create dialog
 			showDialog = true;
 		},
@@ -148,31 +148,6 @@
 			Welcome back {data.user.name}
 		</h1>
 	</div>
-	<span class="text-primary/50 text-sm"> You have </span>
-
-	<div class="grid grid-cols-1 space-x-12 lg:grid-cols-3">
-		<div
-			class="border-primary relative flex flex-col items-center justify-around gap-4 border p-12"
-		>
-			<a
-				href="/events"
-				class="hover:bg-primary/10 absolute top-2 right-2 flex flex-row gap-2 p-1 transition-colors"
-			>
-				<Plus size={16} weight="duotone" class="text-primary" />
-				Create new event
-			</a>
-			<h1 class="text-5xl font-light">X</h1>
-			<span class="text-xs whitespace-nowrap"> Upcoming Events </span>
-		</div>
-		<div class="border-primary flex flex-col items-center justify-around gap-4 border p-12">
-			<h1 class="text-5xl font-light">Y</h1>
-			<span class="text-xs whitespace-nowrap"> People Pending RSVP on upcoming small event </span>
-		</div>
-		<div class="border-primary flex flex-col items-center justify-around gap-4 border p-12">
-			<h1 class="text-5xl font-light">Z</h1>
-			<span class="text-xs whitespace-nowrap"> Spots left on upcoming large event</span>
-		</div>
-	</div>
 
 	{#if data.error}
 		<div class="mb-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700">
@@ -184,15 +159,14 @@
 	<small class="text-primary/50 text-sm">
 		These are your free spots. Click and drag on a time range to quickly create a new event!
 	</small>
-	
-	<Calendar plugins={[TimeGrid, Interaction]} {options} />
+		<Calendar plugins={[TimeGrid, Interaction]} {options} />
 </section>
 
 <!-- Quick Create Event Dialog -->
-<CreateEditDialog 
+<CreateEditDialog
 	bind:open={showDialog}
 	editingEvent={null}
-	bind:formData={formData}
+	bind:formData
 	{loading}
 	onSave={handleSave}
 	onCancel={handleCancel}

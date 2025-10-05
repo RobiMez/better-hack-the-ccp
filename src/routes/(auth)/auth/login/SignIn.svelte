@@ -30,7 +30,7 @@
 	}
 </script>
 
-<div class="container mx-auto flex min-h-[90vh] items-center justify-center border border-black">
+<div class="container mx-auto flex min-h-[90vh] items-center justify-center">
 	<div class="w-full p-4 lg:p-8">
 		<div class="mx-auto flex w-full flex-col items-center justify-center space-y-6 sm:w-[350px]">
 			<div class="flex flex-col space-y-2 text-center">
